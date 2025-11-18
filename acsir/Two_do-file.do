@@ -1,15 +1,38 @@
-***************************************
-** ACS-IR Phase 2a: Data compilation **
-***************************************
+*****************************************
+** ACS-IR Phase 2A+B: Data compilation **
+*****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2025-09-11 (Combine P2A and P2B)
+*   Code version:  2025-11-17
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
 *       1) modify line xx to only have your country's initials, eg. foreach folder in BD {
 *    or 2) remove lines xx [foreach folder in BD NG PK ET {] and xx [}]
 *       and remove lines xx-xx and edit line xx to point to your folder.
+
+/* Edits since 2025-09-11
+- In ACS form drop DT_DUE
+- In ACS reshape add: Transfer_ACS App_Version_ACS
+- Add AGE_DEATH_28_W_SB
+- Relabel NFU_INFORMANT, NFU_TYPE_INTERVIEW, BDF_MODE_DELIVERY, ACS_OUTCOME_ADM with 9 "NA"
+- Add  YYYYMM_ACS
+- Adding NFU_KM and NFU_BREASTFED
+- Previoulsy on those with BDf were kept, now with ACS or MNFU only. Removed from the section "Missing BDF": drop if HOSPNUM == .
+- Do not recode 8888/9999 birth weight on import
+- Add FW_NUM_BDF and FW_NUM_ACS
+- On Mortality: added "replace AGE_DEATH = 0 if BDF_LEFT_STATUS  == 3", edited ANY_BABY_DEATH
+- Corrected: gen HOSPITAL = 10000 * COUNTRY_NUM + 100 * CLUST_NUM + HOSPNUM_BDF
+- label variable BABY_NUM "Birth order"
+- added to reshape: NFU_KMC NFU_KMC_FAC NFU_BREASTFED NFU_BREASTFED_FAC
+- remove GEST_CAT_old
+- added: * Drop extra ACS generated due to long format (i.e., keep 1st instance a.k.a. BABY_NUM==1)
+- reshape in ACS import to include FW_NUM_ACS
+- merge CLUST_NAME_ACS
+- In terms of facility: NOC -> Peripheral
+- Removing the section where PIDs were dropped if P2B born on August or P2A born on September
+- Drop facilities not included in the P2B
+*/
 
 *
 * *
@@ -59,20 +82,18 @@ preserve
      log close
 	keep if FORM_NUM_BDF==1
 	drop FORM_NUM_BDF
-** RECODE BIRTWEIGHT **
-  * recode BDF_BIRTH_WEIGHT1 BDF_BIRTH_WEIGHT2 BDF_BIRTH_WEIGHT3 BDF_BIRTH_WEIGHT4 BDF_BIRTH_WEIGHT5 BDF_BIRTH_WEIGHT6 (7777=.) (8888=.) (9999=.)
 ** FORM DETAILS **
 	gen FORM_BDF = 1
 	gen APP = "P2A"
-	rename HOSPNUM HOSPNUM_BDF
-	rename TAB_CODE TAB_CODE_BDF
-	rename DT_SUBMIT Submit_BDF
+	rename HOSPNUM     HOSPNUM_BDF
+	rename FW_NUM      FW_NUM_BDF
+	rename TAB_CODE    TAB_CODE_BDF
+	rename DT_SUBMIT   Submit_BDF
 	rename DT_TRANSFER Transfer_BDF
 	rename App_Version App_Version_BDF
-	format  Submit_BDF %tC
-	format  Transfer_BDF %tC
+	format Submit_BDF Transfer_BDF %tC
 	format BDF_DATE BDF_DT_ADM BDF_DT_EARLY_USG BDF_DT_LMP BDF_DT_DELIVERY %td
-	order COUNTRY_NUM CLUST_NUM CLUST_NUM
+	order COUNTRY_NUM CLUST_NUM
 	saveold "BDF.dta", replace version(13)
 restore
 
@@ -93,11 +114,11 @@ preserve
 	merge m:1 FAC_ID using "../../Facilities/FACILITY_LIST_P2.dta", nogen keepusing(HOSPITAL_NAME_BDF)
 	drop if ADMIT_NO == .
 	* Gen only one variable of hospital name
-	gen     NFU_SNCU_HOSP_ADM = HOSPITAL_NAME_BDF
+	gen      NFU_SNCU_HOSP_ADM = HOSPITAL_NAME_BDF
 	tostring NFU_B1_SNCU_OTHER_NAME, replace
-	replace NFU_SNCU_HOSP_ADM = NFU_B1_SNCU_OTHER_NAME if NFU_B1_SNCU_HOSP == 0
-	drop NFU_B1_SNCU_HOSP NFU_B1_SNCU_OTHER_NAME HOSPITAL_NAME_BDF COUNTRY_NUM CLUST_NUM 
-	rename FAC_ID NFU_SNCU_ID_ADM
+	replace  NFU_SNCU_HOSP_ADM = NFU_B1_SNCU_OTHER_NAME if NFU_B1_SNCU_HOSP == 0
+	drop     NFU_B1_SNCU_HOSP NFU_B1_SNCU_OTHER_NAME HOSPITAL_NAME_BDF COUNTRY_NUM CLUST_NUM 
+	rename   FAC_ID NFU_SNCU_ID_ADM
 	* 1st sort by admit
 	sort       PID BABY_ID ADMIT_NO
 	reshape wide NFU_SNCU_ID_ADM NFU_SNCU_HOSP_ADM, i(BABY_ID PID) j(ADMIT_NO)
@@ -134,14 +155,14 @@ restore
 preserve
 	import excel using `excelfileinfolder', firstrow sheet("NFU") clear
 	destring *, ignore("NULL") replace
-	* LTFU with STATUS=0 before (glitch before August '25. Now corrected)
 	drop if NFU_DT_FILL < date("01jan2020","DMY")
+	* LTFU with STATUS=0 before (glitch before August '25. Now corrected)
 	drop if STATUS == 0 & NFU_INTERVIEW_DONE == 1
 	drop if STATUS == 0 & NFU_INTERVIEW_DONE == .
 	*keep if STATUS == 1
-	rename FW_NUM FW_NUM_NFU
-	rename TAB_CODE TAB_CODE_NFU
-	rename USER_CODE USER_CODE_NFU  
+	rename FW_NUM      FW_NUM_NFU
+	rename TAB_CODE    TAB_CODE_NFU
+	rename USER_CODE   USER_CODE_NFU  
 	rename App_Version App_Version_NFU 
 	drop STATUS
 ** CHECK IF DUPLICATE **
@@ -158,8 +179,7 @@ preserve
 	gen FORM_NFU = 1
 	rename DT_SUBMIT Submit_NFU
 	rename DT_TRANSFER Transfer_NFU
-	format  Submit_NFU %tC
-	format  Transfer_NFU %tC
+	format  Submit_NFU Transfer_NFU %tC
 	format  NFU_DT_FILL NFU_MOTHER_READMIT_DT NFU_B1_DEATH_DATE NFU_B2_DEATH_DATE NFU_B3_DEATH_DATE NFU_B4_DEATH_DATE NFU_B5_DEATH_DATE NFU_B6_DEATH_DATE %td
 ** MERGE HSOP
 	merge 1:1 PID using "NFU_HOSP.dta"
@@ -223,20 +243,18 @@ preserve
      log close
 	keep if FORM_NUM_BDF==1
 	drop FORM_NUM_BDF
-** RECODE BIRTWEIGHT **
-  * recode BDF_BIRTH_WEIGHT1 BDF_BIRTH_WEIGHT2 BDF_BIRTH_WEIGHT3 BDF_BIRTH_WEIGHT4 BDF_BIRTH_WEIGHT5 BDF_BIRTH_WEIGHT6 (7777=.) (8888=.) (9999=.)
 ** FORM DETAILS **
 	gen FORM_BDF = 1
 	gen APP = "P2B"
-	rename HOSPNUM HOSPNUM_BDF
-	rename TAB_CODE TAB_CODE_BDF
-	rename DT_SUBMIT Submit_BDF
+	rename HOSPNUM     HOSPNUM_BDF
+	rename FW_NUM      FW_NUM_BDF
+	rename TAB_CODE    TAB_CODE_BDF
+	rename DT_SUBMIT   Submit_BDF
 	rename DT_TRANSFER Transfer_BDF
 	rename App_Version App_Version_BDF
-	format  Submit_BDF %tC
-	format  Transfer_BDF %tC
+	format  Submit_BDF Transfer_BDF %tC
 	format BDF_DATE BDF_DT_ADM BDF_DT_EARLY_USG BDF_DT_LMP BDF_DT_DELIVERY %td
-	order COUNTRY_NUM CLUST_NUM CLUST_NUM
+	order COUNTRY_NUM CLUST_NUM
 	saveold "BDF.dta", replace version(13)
 restore
 
@@ -245,13 +263,15 @@ preserve
 	import excel using `excelfileinfolder', firstrow sheet("ACS") clear
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
-	drop USER_CODE TAB_CODE FW_NUM STATUS
+	drop USER_CODE STATUS DT_DUE
 ** REMOVE IF NO CONSENT **
 	drop if ACS_CONSENT == 2
 ** FORM DETAILS **
-	rename HOSPNUM HOSPNUM_ACS
 	gen FORM_ACS = 1
-	rename DT_SUBMIT Submit_ACS
+	rename HOSPNUM     HOSPNUM_ACS
+	rename FW_NUM      FW_NUM_ACS
+	rename TAB_CODE    TAB_CODE_ACS
+	rename DT_SUBMIT   Submit_ACS
 	rename DT_TRANSFER Transfer_ACS
 	rename App_Version App_Version_ACS
 	format  Submit_ACS %tC
@@ -261,26 +281,18 @@ preserve
 	saveold "ACS.dta", replace version(13)
 	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE // Sort by 1st dose order if two or more courses
 	quietly by COUNTRY_NUM CLUST_NUM PID: gen FORM_NUM_ACS = cond(_N==1,1,_n)
-	reshape wide ACS* HOSPNUM_ACS FORM_ACS Submit_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
+	reshape wide ACS* FORM_ACS HOSPNUM_ACS FW_NUM_ACS TAB_CODE_ACS Submit_ACS Transfer_ACS App_Version_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
 	* First ACS as main hospital
 	gen HOSPNUM_ACS = HOSPNUM_ACS1
 	gen APP = "P2B"
 	saveold "ACS_WIDE.dta", replace version(13)
 restore
 
-/**** Importing NFU form 
+*** Importing NFU form 
 preserve
 	import excel using `excelfileinfolder', firstrow sheet("NFU") clear
 	destring *, ignore("NULL") replace
-	* LTFU with STATUS=0 before (glitch before August '25. Now corrected)
-	drop if NFU_DT_FILL < date("01jan2020","DMY")
-	drop if STATUS == 0 & NFU_INTERVIEW_DONE == 1
-	drop if STATUS == 0 & NFU_INTERVIEW_DONE == .
-	*keep if STATUS == 1
-	rename App_Version App_Version_NFU
-	rename FW_NUM FW_NUM_NFU
-	rename TAB_CODE TAB_CODE_NFU
-	rename USER_CODE USER_CODE_NFU   
+	keep if STATUS == 1  
 	drop STATUS
 ** CHECK IF DUPLICATE **
 	sort       COUNTRY_NUM CLUST_NUM PID NFU_DT_FILL
@@ -292,18 +304,18 @@ preserve
 	keep if FORM_NUM_NFU == 1
 	drop FORM_NUM_NFU
 ** FORM DETAILS **
-	rename HOSPNUM HOSPNUM_NFU
 	gen FORM_NFU = 1
-	rename DT_SUBMIT Submit_NFU
+	rename HOSPNUM     HOSPNUM_NFU
+	rename FW_NUM      FW_NUM_NFU
+	rename TAB_CODE    TAB_CODE_NFU
+	rename USER_CODE   USER_CODE_NFU 
+	rename DT_SUBMIT   Submit_NFU
 	rename DT_TRANSFER Transfer_NFU
-	format  Submit_NFU %tC
-	format  Transfer_NFU %tC
+	rename App_Version App_Version_NFU
+	format  Submit_NFU Transfer_NFU %tC
 	format  NFU_DT_FILL NFU_MOTHER_READMIT_DT NFU_B1_DEATH_DATE NFU_B2_DEATH_DATE NFU_B3_DEATH_DATE NFU_B4_DEATH_DATE NFU_B5_DEATH_DATE NFU_B6_DEATH_DATE %td
-** MERGE HSOP
-	merge 1:1 PID using "NFU_HOSP.dta"
 	gen APP = "P2B"
-	drop _merge
-	order COUNTRY_NUM CLUST_NUM CLUST_NUM
+	order COUNTRY_NUM CLUST_NUM
 	saveold "NFU.dta", replace version(13)
 restore
 */
@@ -311,7 +323,7 @@ restore
 * COMBINED DATABASE
 use "BDF.dta", clear
 merge 1:1 PID using "ACS_WIDE.dta", gen(match_DA)
-*merge 1:1 PID using "NFU.dta",      gen(match_DAN)
+merge 1:1 PID using "NFU.dta",      gen(match_DAN)
 
 * Convert string variables to numeric variables
 destring *, ignore("NULL") replace 
@@ -343,27 +355,25 @@ append using "P2B/NG/Full_database_complete_B.dta", force
 order APP
 tab APP
 
-* Resolve missing CLUST_NUM due to DIST_NUM to CLUST_NUM change (solved)
-tab COUNTRY_NUM CLUST_NUM, m
-*gen CLUSTER_PID = substr(PID,2,2)
-*destring CLUSTER_PID, replace
-*replace CLUST_NUM = CLUSTER_PID if CLUST_NUM == .
-
-
-
-* NG P2a: Change Hosp num on combined clusters
-* Cross River & Akwa Ibom
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHE" & HOSPNUM_BDF <=6
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHF" & HOSPNUM_BDF <=6
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHG" & HOSPNUM_BDF <=6
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHH" & HOSPNUM_BDF <=6 
-* Ogun & Ondo
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 10 & TAB_CODE_BDF == "NJF" & HOSPNUM_BDF <=4
-replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 10 & TAB_CODE_BDF == "NJG" & HOSPNUM_BDF <=4
-
+*
+* * 
+* * * NG P2A: Change Hosp_num on combined clusters as different areas used same code in P2A. 
+  * Cross River & Akwa Ibom
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHE" & HOSPNUM_BDF <= 6 & APP == "P2A"
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHF" & HOSPNUM_BDF <= 6 & APP == "P2A"
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHG" & HOSPNUM_BDF <= 6 & APP == "P2A"
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 8  & TAB_CODE_BDF == "NHH" & HOSPNUM_BDF <= 6 & APP == "P2A" 
+  * Ogun & Ondo
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 10 & TAB_CODE_BDF == "NJF" & HOSPNUM_BDF <= 4 & APP == "P2A"
+  replace HOSPNUM_BDF = HOSPNUM_BDF + 10 if COUNTRY_NUM == 1 & CLUST_NUM == 10 & TAB_CODE_BDF == "NJG" & HOSPNUM_BDF <= 4 & APP == "P2A"
+* * *
+* * 
+*
 
 * Merge facility list (Facility type and name)
-merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_BDF  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_BDF  CLUST_NAME HOSPITAL_NAME_BDF)
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_BDF  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_BDF  CLUST_NAME     HOSPITAL_NAME_BDF P2B)
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_ACS  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_ACS  CLUST_NAME_ACS HOSPITAL_NAME_ACS)
+replace CLUST_NAME = CLUST_NAME_ACS if CLUST_NAME == "" & CLUST_NAME_ACS != ""
 
 *
 * *
@@ -374,10 +384,10 @@ drop if PID == ""
 drop if COUNTRY_NUM == .
 
 * Change NK/NA/missing dates (9.9.1909 etc.) to missing value (.)
-foreach var of varlist *_DT_* *_DT *_DATE {
+foreach var of varlist *_DT_* *_DT *_DATE *_DATE* {
 	replace `var'=. if `var' < mdy(1, 1, 2022)
 }
-
+ 
 *
 * *
 * * *
@@ -402,11 +412,14 @@ replace COUNTRY = "BD" if COUNTRY_NUM == 4
 * *
 * * * Hospital unique
 
-gen HOSPITAL = 1000 * COUNTRY_NUM + 100 * CLUST_NUM + HOSPNUM_BDF
+gen HOSPITAL = 10000 * COUNTRY_NUM + 100 * CLUST_NUM + HOSPNUM_BDF
 
 *
 * *
-* * * ANALYSIS VARIABLE CREATION
+* * *
+* * * * 
+* * * * *
+* * * * * * ANALYSIS VARIABLE CREATION
 
 *
 * *
@@ -414,14 +427,15 @@ gen HOSPITAL = 1000 * COUNTRY_NUM + 100 * CLUST_NUM + HOSPNUM_BDF
 * * * * Basic details:
 
 gen HOSPNUM = HOSPNUM_BDF
-	
-* FACILITY CATEGORIZATION:	
 
+* FACILITY CATEGORIZATION:	
 gen            ACS_IF = .
 replace        ACS_IF = 1 if FAC_BDF == "Core facility"
-replace        ACS_IF = 2 if FAC_BDF == "NOC facility"
-label define   ACS_IF  1 "Core Facility" 2 "NOC Facility"
+replace        ACS_IF = 2 if FAC_BDF == "Peripheral facility"
+
+label define   ACS_IF  1 "Core Facility" 2 "Peripheral Facility"
 label values   ACS_IF ACS_IF
+
 label variable ACS_IF "Facility type BDF"
 
 gen FAC = FAC_BDF
@@ -436,11 +450,17 @@ gen         MM =   month(BDF_DT_DELIVERY)
 gen     YYYYMM = ym(year(BDF_DT_DELIVERY), month(BDF_DT_DELIVERY))
 format  YYYYMM %tm
 
-* PERIOD DELIVERY: creating the month/year date
+* PERIOD MNFU: creating the month/year date
 gen       YYYY_MNFU =    year(NFU_DT_FILL) 
 gen         MM_MNFU =   month(NFU_DT_FILL)
 gen     YYYYMM_MNFU = ym(year(NFU_DT_FILL), month(NFU_DT_FILL))
 format  YYYYMM_MNFU %tm
+
+* PERIOD ACS: creating the month/year date
+gen       YYYY_ACS =    year(ACS_DOSE1_DATE1) 
+gen         MM_ACS =   month(ACS_DOSE1_DATE1)
+gen     YYYYMM_ACS = ym(year(ACS_DOSE1_DATE1), month(ACS_DOSE1_DATE1))
+format  YYYYMM_ACS %tm
 
 * QUARTER BDF
 gen     QUARTER = .
@@ -619,12 +639,12 @@ label variable GA_ACS_EUSG "Gestational age in days at ACS dose 1 course 1 using
 * * * * GA at birth (category)
 
 gen     GA_BIRTH_CAT = .
-replace GA_BIRTH_CAT = 0 if GA_BIRTH >= 0    & GA_BIRTH < 28*7  // 26*7 = 182
+replace GA_BIRTH_CAT = 0 if GA_BIRTH >= 0    & GA_BIRTH < 28*7  // 28*7 = 196
 replace GA_BIRTH_CAT = 1 if GA_BIRTH >= 28*7 & GA_BIRTH < 34*7  // 34*7 = 238
 replace GA_BIRTH_CAT = 2 if GA_BIRTH >= 34*7 & GA_BIRTH < 37*7  // 37*7 = 259
 replace GA_BIRTH_CAT = 3 if GA_BIRTH >= 37*7 & GA_BIRTH < 45*7  // 45*7 = 315
 replace GA_BIRTH_CAT = 4 if GA_BIRTH >= 45*7
-replace GA_BIRTH_CAT = 8 if BDF_GA_WEEKS == 88
+replace GA_BIRTH_CAT = 8 if BDF_GA_WEEKS == 88 | BDF_GA_WEEKS == 99
 replace GA_BIRTH_CAT = 9 if BDF_GA_WEEKS == .
 replace GA_BIRTH_CAT = . if FORM_BDF != 1
 
@@ -636,7 +656,7 @@ replace GA_BIRTH_CATU = 1 if GA_BIRTH_EUSG >= 28*7 & GA_BIRTH_EUSG < 34*7
 replace GA_BIRTH_CATU = 2 if GA_BIRTH_EUSG >= 34*7 & GA_BIRTH_EUSG < 37*7
 replace GA_BIRTH_CATU = 3 if GA_BIRTH_EUSG >= 37*7 & GA_BIRTH_EUSG < 45*7
 replace GA_BIRTH_CATU = 4 if GA_BIRTH_EUSG >= 45*7 & GA_BIRTH_EUSG != .
-replace GA_BIRTH_CATU = 8 if BDF_GA_EARLYUSG_WKS == 88
+replace GA_BIRTH_CATU = 8 if BDF_GA_EARLYUSG_WKS == 88 | BDF_GA_EARLYUSG_WKS == 99
 replace GA_BIRTH_CATU = 8 if GA_BIRTH_EUSG == .
 replace GA_BIRTH_CATU = 9 if BDF_GA_EARLYUSG_WKS == .
 replace GA_BIRTH_CATU = . if FORM_BDF != 1
@@ -645,10 +665,8 @@ label variable GA_BIRTH_CATU "Gestational age category at birth from earliest US
 
 label define GA_BIRTH_CAT  0 "0+0 - 27+6" 1 "28+0 - 33+6" 2 "34+0 - 36+6" 3 "37+0 - 44+6" 4 "45+0 -" 8 "NK"     9 "Missing"
 label define GA_BIRTH_CATU 0 "0+0 - 27+6" 1 "28+0 - 33+6" 2 "34+0 - 36+6" 3 "37+0 - 44+6" 4 "45+0 -" 8 "No USG" 9 "Missing"
-label values GA_BIRTH_CAT            GA_BIRTH_CAT 
-label values GA_BIRTH_CATU           GA_BIRTH_CATU
-
-
+label values GA_BIRTH_CAT  GA_BIRTH_CAT 
+label values GA_BIRTH_CATU GA_BIRTH_CATU
 
 *
 * *
@@ -663,41 +681,37 @@ gen            DGA_DAYS = .
 replace        DGA_DAYS = GA_BIRTH_EUSG - DGA_WEEKS*7
 label variable DGA_DAYS "DGA EUSG days (BDF)"
 
-
-
 *
 * *
 * * * ACS (category)
 
 gen     GA_ACS_CAT = .
+replace GA_ACS_CAT = 0 if GA_ACS_DAY  < 24*7
 replace GA_ACS_CAT = 1 if GA_ACS_DAY >= 24*7 & GA_ACS_DAY < 34*7
 replace GA_ACS_CAT = 2 if GA_ACS_DAY >= 34*7 & GA_ACS_DAY < 37*7
 replace GA_ACS_CAT = 3 if GA_ACS_DAY >= 37*7 & GA_ACS_DAY < 45*7
 replace GA_ACS_CAT = 4 if GA_ACS_DAY >= 45*7
-replace GA_ACS_CAT = 0 if GA_ACS_DAY  < 24*7
 replace GA_ACS_CAT = 9 if GA_ACS_DAY == .
 replace GA_ACS_CAT = . if FORM_ACS1 != 1
 
 label variable GA_ACS_CAT "Gestational age provider at ACS 1"
 
 gen     GA_ACS_CATU = .
+replace GA_ACS_CATU = 0 if GA_ACS_EUSG  < 24*7 
 replace GA_ACS_CATU = 1 if GA_ACS_EUSG >= 24*7 & GA_ACS_EUSG < 34*7 
 replace GA_ACS_CATU = 2 if GA_ACS_EUSG >= 34*7 & GA_ACS_EUSG < 37*7 
 replace GA_ACS_CATU = 3 if GA_ACS_EUSG >= 37*7 & GA_ACS_EUSG < 45*7 
 replace GA_ACS_CATU = 4 if GA_ACS_EUSG >= 45*7 
-replace GA_ACS_CATU = 0 if GA_ACS_EUSG  < 24*7 
 replace GA_ACS_CATU = 9 if GA_ACS_EUSG == .
 replace GA_ACS_CATU = . if FORM_ACS1 != 1
 
 label variable GA_ACS_CATU "Gestational age at ACS 1 from earliest USG"
-
 
 * Labels for GA cat
 label define ACS_CAT 0 "- 23+6" 1 "24+0 - 33+6" 2 "34+0 - 36+6" 3 "37+0 - 44+6" 4 "45+0 -" 9 "NK/NA"
 
 label values GA_ACS_CAT       ACS_CAT
 label values GA_ACS_CATU      ACS_CAT
-
 
 *
 * *
@@ -731,12 +745,12 @@ replace NUM_LEFT_ALIVE = NUM_LEFT_ALIVE + 1 if BDF_BIRTH_STATUS6 == 1 & BDF_LEFT
 * *
 * * *
 * * * *
-* * * * * NFU (All mothers followed)
+* * * * * NFU (P2A)
 
 gen     NEEDS_NFU = 0
 replace NEEDS_NFU = 1 if BDF_MNFU_CONSENT == 1 & NUM_LEFT_ALIVE >= 1
 
-gen AGE_NFU = NFU_DT_FILL - BDF_DT_DELIVERY
+gen     AGE_NFU = NFU_DT_FILL - BDF_DT_DELIVERY
 label variable AGE_NFU "Age at NFU, days"
 
 gen     AGE_READMISSION_MOTHER = .
@@ -768,7 +782,7 @@ label values BDF_BIRTH_STATUS4 BDF_BIRTH_STATUS
 label values BDF_BIRTH_STATUS5 BDF_BIRTH_STATUS
 label values BDF_BIRTH_STATUS6 BDF_BIRTH_STATUS
 
-label define BDF_MODE_DELIVERY 1 "Vaginal" 2 "C-section" 8 "NK"
+label define BDF_MODE_DELIVERY 1 "Vaginal" 2 "C-section" 8 "NK" 9 "NA"
 label values BDF_MODE_DELIVERY1 BDF_MODE_DELIVERY
 label values BDF_MODE_DELIVERY2 BDF_MODE_DELIVERY
 label values BDF_MODE_DELIVERY3 BDF_MODE_DELIVERY
@@ -810,10 +824,10 @@ label values BDF_TRIM_1STANC_VISIT TRIMM
 label define NFU_INTERVIEW_DONE 1 "Yes" 2 "Lost to follow-up (60 days)"
 label values NFU_INTERVIEW_DONE NFU_INTERVIEW_DONE
 
-label define NFU_TYPE_INTERVIEW 1 "Telephonic" 2 "Home visit" 3 "Other"
+label define NFU_TYPE_INTERVIEW 1 "Telephonic" 2 "Home visit" 3 "Other"	9 "NA"
 label values NFU_TYPE_INTERVIEW NFU_TYPE_INTERVIEW
 
-label define NFU_INFORMANT 1 "Mother" 2 "Other family member" 3 "Other"	
+label define NFU_INFORMANT 1 "Mother" 2 "Other family member" 3 "Other"	9 "NA"
 label values NFU_INFORMANT NFU_INFORMANT
 
 label define NFU_MOTHER_READMIT_RSN 1 "Infection/Fever" 2 "Other" 8 "NK" 9 "NA"
@@ -852,13 +866,41 @@ label values NFU_B4_SNCU YESNONKNA
 label values NFU_B5_SNCU YESNONKNA
 label values NFU_B6_SNCU YESNONKNA
 
+/* START: ADDED 2025-10-01 */
+label values NFU_B1_KMC  YESNONKNA
+label values NFU_B2_KMC  YESNONKNA
+label values NFU_B3_KMC  YESNONKNA
+label values NFU_B4_KMC  YESNONKNA
+label values NFU_B5_KMC  YESNONKNA
+label values NFU_B6_KMC  YESNONKNA
+
+label values NFU_B1_KMC_FAC  YESNONKNA
+label values NFU_B2_KMC_FAC  YESNONKNA
+label values NFU_B3_KMC_FAC  YESNONKNA
+label values NFU_B4_KMC_FAC  YESNONKNA
+label values NFU_B5_KMC_FAC  YESNONKNA
+label values NFU_B6_KMC_FAC  YESNONKNA
+
+label values NFU_B1_BREASTFED  YESNONKNA
+label values NFU_B2_BREASTFED  YESNONKNA
+label values NFU_B3_BREASTFED  YESNONKNA
+label values NFU_B4_BREASTFED  YESNONKNA
+label values NFU_B5_BREASTFED  YESNONKNA
+label values NFU_B6_BREASTFED  YESNONKNA
+
+label values NFU_B1_BREASTFED_FAC  YESNONKNA
+label values NFU_B2_BREASTFED_FAC  YESNONKNA
+label values NFU_B3_BREASTFED_FAC  YESNONKNA
+label values NFU_B4_BREASTFED_FAC  YESNONKNA
+label values NFU_B5_BREASTFED_FAC  YESNONKNA
+label values NFU_B6_BREASTFED_FAC  YESNONKNA
+/* END: ADDED 2025-10-01 */
+
 label define BINARY 0 "No" 1 "Yes"
 label values EUSG_AVAIL BINARY
 label values NEEDS_NFU  BINARY
 
 * P2B
-
-
 label values BDF_ANTIBIOTICS    YESNONKNA
 label values BDF_ANTIB_PPROM    YESNONKNA
 label values BDF_ANTIB_CS       YESNONKNA
@@ -873,8 +915,14 @@ label values ACS_SIGNS_ACUTE_INFECTION1 YESNONKNA
 label values ACS_FHS1        BDF_FHS
 label values ACS_PRIM_DIAGN1 BDF_PT_BIRTH_INDICTN
 
-label define ACS_OUTCOME_ADM 1 "No delivery (Discharged/LAMA alive prior to delivery)" 2 "Delivered" 3 "Referred to a higher-level facility" 4 "Maternal death" 5 "Miscarriage/Abortion" 6 "Remained in the facility for another treatment" 8 "NK"
+label define ACS_OUTCOME_ADM 1 "No delivery (Discharged/LAMA alive prior to delivery)" 2 "Delivered" 3 "Referred to a higher-level facility" 4 "Maternal death" 5 "Miscarriage/Abortion" 6 "Remained in the facility for another treatment" 8 "NK" 9 "NA"
 label values ACS_OUTCOME_ADM1 ACS_OUTCOME_ADM
+
+*
+* *
+* * * CLEAN ETHIOPIA
+	replace BDF_BIRTH_WEIGHT6 = . if BDF_BIRTH_WEIGHT6 == 9999
+	replace BDF_SEX6 = . if BDF_SEX6 == 9
 
 *
 * * 
@@ -906,12 +954,12 @@ use "/Users/juha/X/WHO/WHO24/Monitoring/Data2/Full_database_analysis_ALL_COUNTRI
 drop if BDF_NUM_FETUS == 8
 
 * Reveal missing BW
-replace BDF_BIRTH_WEIGHT1 = 9999 if BDF_BIRTH_WEIGHT1 == . & BDF_NUM_FETUS == 1
-replace BDF_BIRTH_WEIGHT2 = 9999 if BDF_BIRTH_WEIGHT2 == . & BDF_NUM_FETUS >= 2
-replace BDF_BIRTH_WEIGHT3 = 9999 if BDF_BIRTH_WEIGHT3 == . & BDF_NUM_FETUS >= 3
-replace BDF_BIRTH_WEIGHT4 = 9999 if BDF_BIRTH_WEIGHT4 == . & BDF_NUM_FETUS >= 4
-replace BDF_BIRTH_WEIGHT5 = 9999 if BDF_BIRTH_WEIGHT5 == . & BDF_NUM_FETUS >= 5
-replace BDF_BIRTH_WEIGHT6 = 9999 if BDF_BIRTH_WEIGHT6 == . & BDF_NUM_FETUS >= 6
+replace BDF_BIRTH_WEIGHT1 = 9999 if BDF_BIRTH_WEIGHT1 == . & BDF_NUM_FETUS == 1 & BDF_NUM_FETUS <= 6
+replace BDF_BIRTH_WEIGHT2 = 9999 if BDF_BIRTH_WEIGHT2 == . & BDF_NUM_FETUS >= 2 & BDF_NUM_FETUS <= 6
+replace BDF_BIRTH_WEIGHT3 = 9999 if BDF_BIRTH_WEIGHT3 == . & BDF_NUM_FETUS >= 3 & BDF_NUM_FETUS <= 6
+replace BDF_BIRTH_WEIGHT4 = 9999 if BDF_BIRTH_WEIGHT4 == . & BDF_NUM_FETUS >= 4 & BDF_NUM_FETUS <= 6
+replace BDF_BIRTH_WEIGHT5 = 9999 if BDF_BIRTH_WEIGHT5 == . & BDF_NUM_FETUS >= 5 & BDF_NUM_FETUS <= 6
+replace BDF_BIRTH_WEIGHT6 = 9999 if BDF_BIRTH_WEIGHT6 == . & BDF_NUM_FETUS == 6
 
 list COUNTRY PID BDF_BIRTH_WEIGHT1 if BDF_BIRTH_WEIGHT1 == 9999
 list COUNTRY PID BDF_BIRTH_WEIGHT2 if BDF_BIRTH_WEIGHT2 == 9999
@@ -963,6 +1011,44 @@ rename NFU_B4_DEATH_LOCATION NFU_DEATH_LOCATION4
 rename NFU_B5_DEATH_LOCATION NFU_DEATH_LOCATION5
 rename NFU_B6_DEATH_LOCATION NFU_DEATH_LOCATION6
 
+/* START: ADDED 2025-10-01 */
+rename NFU_B1_KMC  NFU_KMC1
+rename NFU_B2_KMC  NFU_KMC2
+rename NFU_B3_KMC  NFU_KMC3
+rename NFU_B4_KMC  NFU_KMC4
+rename NFU_B5_KMC  NFU_KMC5
+rename NFU_B6_KMC  NFU_KMC6
+
+rename NFU_B1_KMC_FAC  NFU_KMC_FAC1
+rename NFU_B2_KMC_FAC  NFU_KMC_FAC2
+rename NFU_B3_KMC_FAC  NFU_KMC_FAC3
+rename NFU_B4_KMC_FAC  NFU_KMC_FAC4
+rename NFU_B5_KMC_FAC  NFU_KMC_FAC5
+rename NFU_B6_KMC_FAC  NFU_KMC_FAC6
+
+rename NFU_B1_BREASTFED  NFU_BREASTFED1
+rename NFU_B2_BREASTFED  NFU_BREASTFED2
+rename NFU_B3_BREASTFED  NFU_BREASTFED3
+rename NFU_B4_BREASTFED  NFU_BREASTFED4
+rename NFU_B5_BREASTFED  NFU_BREASTFED5
+rename NFU_B6_BREASTFED  NFU_BREASTFED6
+
+rename NFU_B1_BREASTFED_FAC  NFU_BREASTFED_FAC1
+rename NFU_B2_BREASTFED_FAC  NFU_BREASTFED_FAC2
+rename NFU_B3_BREASTFED_FAC  NFU_BREASTFED_FAC3
+rename NFU_B4_BREASTFED_FAC  NFU_BREASTFED_FAC4
+rename NFU_B5_BREASTFED_FAC  NFU_BREASTFED_FAC5
+rename NFU_B6_BREASTFED_FAC  NFU_BREASTFED_FAC6
+
+rename NFU_B1_DEATH_FAC NFU_DEATH_FAC1
+rename NFU_B2_DEATH_FAC NFU_DEATH_FAC2
+rename NFU_B3_DEATH_FAC NFU_DEATH_FAC3
+rename NFU_B4_DEATH_FAC NFU_DEATH_FAC4
+rename NFU_B5_DEATH_FAC NFU_DEATH_FAC5
+rename NFU_B6_DEATH_FAC NFU_DEATH_FAC6
+
+/* END: ADDED 2025-10-01 */
+
 * Clean to fit variables
 tostring BDF_CHILD_ID3, replace format("%11.1f") force
 tostring BDF_CHILD_ID4, replace format("%11.1f") force
@@ -990,13 +1076,16 @@ tostring NFU_SNCU_HOSP_ADM5_B3, replace format("%9.0g") force
 * Reshape on baby variables. Generates variable BABY_NUM indicating each newborn as one line:
 reshape long BDF_CHILD_ID BDF_BIRTH_ORDER BDF_MODE_DELIVERY BDF_BIRTH_STATUS BDF_BIRTH_WEIGHT BDF_SEX BDF_RESUSCITATION BDF_LEFT_STATUS ///
 			 NFU_VITAL_STATUS NFU_DEATH_PLACE NFU_DEATH_DATE NFU_DEATH_LOCATION ///
+			 NFU_KMC NFU_KMC_FAC NFU_BREASTFED NFU_BREASTFED_FAC ///
 			 NFU_SNCU NFU_SNCU_NUM ///
 			 NFU_SNCU_ID_ADM1_B NFU_SNCU_HOSP_ADM1_B ///
 			 NFU_SNCU_ID_ADM2_B NFU_SNCU_HOSP_ADM2_B ///
 			 NFU_SNCU_ID_ADM3_B NFU_SNCU_HOSP_ADM3_B ///
 			 NFU_SNCU_ID_ADM4_B NFU_SNCU_HOSP_ADM4_B ///
 			 NFU_SNCU_ID_ADM5_B NFU_SNCU_HOSP_ADM5_B, i(PID) j(BABY_NUM)
-		 
+	 
+label variable BABY_NUM "Birth order"
+
 rename NFU_SNCU_ID_ADM1_B NFU_SNCU_ID_ADM1
 rename NFU_SNCU_ID_ADM2_B NFU_SNCU_ID_ADM2
 rename NFU_SNCU_ID_ADM3_B NFU_SNCU_ID_ADM3
@@ -1029,10 +1118,11 @@ drop if FORM_BDF == 1 & BDF_BIRTH_STATUS == . & BDF_BIRTH_WEIGHT == .
 * Drop babies without birth status (due to error in data collection)
 drop if BDF_BIRTH_STATUS == 9
 
-/* Drop extra ACS/EHS/MIF generated due to long format (i.e., keep 1st instance a.k.a. BABY_NUM==1)
+/* START: ADDED 2025-10-01 */
+* Drop extra ACS generated due to long format (i.e., keep 1st instance a.k.a. BABY_NUM==1)
 drop if FORM_BDF != 1 & FORM_ACS1 == 1 & BABY_NUM > 1
 drop if FORM_BDF != 1 & FORM_NFU  == 1 & BABY_NUM > 1
-*/
+/* END: ADDED 2025-10-01 */
 
 * Drop non-PID
 drop if PID == ""
@@ -1057,24 +1147,6 @@ replace GEST_CAT = 3 if GEST_CAT > 4 & BDF_BIRTH_WEIGHT >  2000 & BDF_BIRTH_WEIG
 label define   GEST_CAT 0 "EEPT" 1 "EPT" 2 "LPT" 3 "Term" 4 "Invalid USG" 9 "No USG/BW"
 label values   GEST_CAT GEST_CAT
 label variable GEST_CAT "2 Gestation age category at birth using earliest USG or weight"
-
-
-	* Old GEST_CAT ignored <28 weeks as NK. Now a separate option.
-	gen     GEST_CAT_old = .
-	replace GEST_CAT_old = 9 if FORM_BDF == 1
-	replace GEST_CAT_old = 1 if GA_BIRTH_CATU == 1
-	replace GEST_CAT_old = 2 if GA_BIRTH_CATU == 2
-	replace GEST_CAT_old = 3 if GA_BIRTH_CATU == 3
-	replace GEST_CAT_old = 1 if GEST_CAT_old == 9 & BDF_BIRTH_WEIGHT >= 1000 & BDF_BIRTH_WEIGHT <= 1500
-	replace GEST_CAT_old = 2 if GEST_CAT_old == 9 & BDF_BIRTH_WEIGHT >  1500 & BDF_BIRTH_WEIGHT <= 2000
-	replace GEST_CAT_old = 3 if GEST_CAT_old == 9 & BDF_BIRTH_WEIGHT >  2000 & BDF_BIRTH_WEIGHT <  8000
-
-	label define   GEST_CAT_old 1 "EPT" 2 "LPT" 3 "Term" 9 "NK" 
-	label values   GEST_CAT_old GEST_CAT_old
-	label variable GEST_CAT_old "OLD GEST CAT"
-
-	tab  GEST_CAT GEST_CAT_old
-
 
 *
 * *
@@ -1101,8 +1173,8 @@ label variable EPT "Preterm, binary using EUSG or BW"
 gen     NEEDS_NFU_MOTHER = 0
 replace NEEDS_NFU_MOTHER = 1 if BDF_MNFU_CONSENT == 1
 
-gen     NEEDS_NFU_BABY = 0
-replace NEEDS_NFU_BABY = 1 if BDF_MNFU_CONSENT == 1 & BDF_BIRTH_STATUS == 1 & BDF_LEFT_STATUS != 3
+gen     NEEDS_NFU_BABY   = 0
+replace NEEDS_NFU_BABY   = 1 if BDF_MNFU_CONSENT == 1 & BDF_BIRTH_STATUS == 1 & BDF_LEFT_STATUS != 3
 
 label values NEEDS_NFU_BABY   BINARY
 label values NEEDS_NFU_MOTHER BINARY
@@ -1112,7 +1184,9 @@ label values NEEDS_NFU_MOTHER BINARY
 * * * MORTALITY
 
 * Age (days) at death
-gen AGE_DEATH = NFU_DEATH_DATE - BDF_DT_DELIVERY
+gen     AGE_DEATH = NFU_DEATH_DATE - BDF_DT_DELIVERY
+replace AGE_DEATH = 0 if BDF_LEFT_STATUS  == 3
+
 label variable AGE_DEATH "Age at death, days"
 
 * Neonatal mortality:
@@ -1133,7 +1207,7 @@ gen     PNM = .
 replace PNM = 1 if BDF_BIRTH_STATUS == 1 & FORM_NFU == 1 & AGE_NFU   >= 7 & NFU_VITAL_STATUS == 1 & AGE_NFU != .
 replace PNM = 1 if BDF_BIRTH_STATUS == 1 & FORM_NFU == 1 & AGE_DEATH  > 7 & NFU_VITAL_STATUS == 2 & AGE_DEATH != .
 replace PNM = 2 if BDF_BIRTH_STATUS == 1 & FORM_NFU == 1 & AGE_DEATH <= 7 & NFU_VITAL_STATUS == 2 & AGE_DEATH != .
-replace PNM = 2 if BDF_LEFT_STATUS == 3
+replace PNM = 2 if BDF_LEFT_STATUS  == 3
 replace PNM = 3 if BDF_BIRTH_STATUS == 2
 
 label variable PNM "Perinatal mortality: Verified status at 7 days"
@@ -1147,13 +1221,20 @@ replace ANY_BABY_DEATH = 1 if BDF_BIRTH_STATUS == 1
 replace ANY_BABY_DEATH = 2 if BDF_BIRTH_STATUS == 2
 replace ANY_BABY_DEATH = 3 if NNM == 1
 replace ANY_BABY_DEATH = 4 if NNM == 2
-replace ANY_BABY_DEATH = 4 if PNM == 2
-replace ANY_BABY_DEATH = 4 if BDF_BIRTH_STATUS == 2
 
 label variable ANY_BABY_DEATH "Any mortality: Status at birth or 28 days"
 
 label define ANY_BABY_DEATH 1 "Alive at birth" 2 "Stillborn" 3 "Alive at 28 days" 4 "Dead at 28 days"
 label values ANY_BABY_DEATH ANY_BABY_DEATH
+
+* Age of death till 28 days, including BDF (stillborn or died on ward)
+gen     AGE_DEATH_28_W_SB = .
+replace AGE_DEATH_28_W_SB = NFU_DEATH_DATE - BDF_DT_DELIVERY
+replace AGE_DEATH_28_W_SB = 0 if BDF_BIRTH_STATUS == 2 | BDF_LEFT_STATUS == 3
+replace AGE_DEATH_28_W_SB = . if AGE_DEATH_28 > 28
+
+label variable AGE_DEATH_28_W_SB "Age death 0-28 days"
+
 
 *
 * *
@@ -1179,60 +1260,35 @@ preserve
  saveold "Full_database_analysis_EXCLUDED_LONG.dta", replace version(13)
 restore
 
-* DROP THOSE TO BE EXCLUDED:
-** keep if EXCLUDE == 0
+***** DROP THOSE TO BE EXCLUDED: (Not until official analysis) ** keep if EXCLUDE == 0 *********
 
-*
-* *
-* * *
-* * * *
-* * * * * 
-
-* SEPTEMBER ONWARDS OUT OF P2a:
-preserve
- keep if MM >= 9 & MM != . & APP == "P2A"
- saveold "September_P2a.dta", replace
-restore
-
-drop if MM >= 9 & MM != . & APP == "P2A"
-
-* BEFORE SEPTEMBER  OUT OF P2b:
-preserve
- keep if MM < 9 & MM != . & APP == "P2B"
- saveold "September_P2b.dta", replace
-restore
-
-drop if MM < 9 & MM != . & APP == "P2B"
-
-* * * * *
-* * * * 
-* * *
-* *
-*
 
 *
 * * BABY_ID
 
 egen BABY_ID = concat(PID BDF_BIRTH_ORDER) if BDF_BIRTH_ORDER != .
 
-order PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU 
+order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU 
 
 *
 * *
 * * * Save
 
-saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta", replace version(13)
+* saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta", replace version(13)
+
 
 *
 * *
 * * *
 * * * *
 * * * * * 
+* * * * * *
 * * * * * * * MONITORING VARIABLES
 
-clear 
-cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/"
-use "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta"
+
+* clear 
+* cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/"
+* use "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta"
 
 *
 * *
@@ -1274,7 +1330,6 @@ replace USG_TO_ADM_GROUP = "2-7 days before"   if USG_TO_ADM >= 2  & USG_TO_ADM 
 replace USG_TO_ADM_GROUP = "8-28 days before"  if USG_TO_ADM >= 8  & USG_TO_ADM <= 28
 replace USG_TO_ADM_GROUP = "29-59 days before" if USG_TO_ADM >= 29 & USG_TO_ADM <= 59
 replace USG_TO_ADM_GROUP = "60+ days before"   if USG_TO_ADM >= 60 & USG_TO_ADM != .
-
 
 *
 * *
@@ -1327,35 +1382,54 @@ label variable weight_level "Weight measured to accuracy"
 * * * Missing BDF
 
 list COUNTRY PID BABY_NUM FORM_NFU NFU_DT_FILL Submit_NFU if HOSPNUM==.
-drop if HOSPNUM == .
+/* START: Edit */
+* drop if HOSPNUM == .
+/* END: edit */
 
 *
 * *
-* * * DROP DROPPED CLUSTERS
+* * * DROP DROPPED CLUSTERS AND FACILITIES
 
-* Bangaldesh drops clusters: 08 Habiganj & 11 Chandpur
-drop if COUNTRY ==  "BD" & CLUST_NUM  == 8
-drop if COUNTRY ==  "BD" & CLUST_NUM  == 11
+gen DROP_CLUSTER = 0
 
-* EEthiopia drops clusters 02 Mekelle, 04 Bahir Dar, and 07 Adama.
-drop if COUNTRY ==  "ET" & CLUST_NUM  == 2
-drop if COUNTRY ==  "ET" & CLUST_NUM  == 4
-drop if COUNTRY ==  "ET" & CLUST_NUM  == 7
+* Bangaldesh drops clusters: 05 Feni, 08 Habiganj, and 11 Chandpur
+replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 5
+replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 8
+replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 11
+
+* Ethiopia drops clusters 02 Mekelle, 04 Bahir Dar, and 07 Adama
+replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 2
+replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 4
+replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 7
 
 * Pakistan drop cluster 05 Chakwal & 11 Tharparkar
-drop if COUNTRY ==  "PK" & CLUST_NUM  == 5
-drop if COUNTRY ==  "PK" & CLUST_NUM  == 11
+replace DROP_CLUSTER = 1 if COUNTRY ==  "PK" & CLUST_NUM  == 5
+replace DROP_CLUSTER = 1 if COUNTRY ==  "PK" & CLUST_NUM  == 11
 
 * Nigeria drop cluster 04 Jigawa & 11 Plateau
-drop if COUNTRY ==  "NG" & CLUST_NUM  == 4
-drop if COUNTRY ==  "NG" & CLUST_NUM  == 11
+replace DROP_CLUSTER = 1 if COUNTRY ==  "NG" & CLUST_NUM  == 4
+replace DROP_CLUSTER = 1 if COUNTRY ==  "NG" & CLUST_NUM  == 11
 
+* Extract data
+preserve
+ keep if DROP_CLUSTER == 1 | P2B == "No"
+ save "Dropped_clusters_P2_LONG_X.dta", replace
+restore
 
+* Drop clusters
+drop if DROP_CLUSTER == 1
+
+* Drop facilities
+drop if P2B == "No"
+
+*
 *
 * *
 * * *
 * * * *
 * * * * * SAVE STATA
+
+gen DATADL = "Data download: 2025-11-17 09:45 EET"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
@@ -1364,16 +1438,28 @@ saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13
 *
 
 *
-* * 
-* * * Reability edits for the monitoring report
+* *
+* * *
+* * * *
+* * * * * 
+* * * * * *
+* * * * * * *
+* * * * * * * *
+* * * * * * * * *
+* * * * * * * * * *
+* * * * * * * * * * *
+* * * * * * * * * * * *
+* * * * * * * * * * * * *
+* * * * * * * * * * * * * *
+* * * * * * * * * * * * * * *  Reability edits for the monitoring report (Juha)
 
 replace COUNTRY = "Bangladesh" if COUNTRY == "BD"
 replace COUNTRY = "Ethiopia"   if COUNTRY == "ET"
 replace COUNTRY = "Nigeria"    if COUNTRY == "NG"
 replace COUNTRY = "Pakistan"   if COUNTRY == "PK"
 
-gen     Facility = "Core" if ACS_IF == 1
-replace Facility = "NOC"  if ACS_IF == 2
+gen     Facility = "Core"        if ACS_IF == 1
+replace Facility = "Peripheral"  if ACS_IF == 2
 
 gen     CLUS = string(CLUST_NUM) + " " + CLUST_NAME
 replace CLUS = "0" + CLUS if CLUST_NUM < 10
@@ -1381,9 +1467,12 @@ replace CLUS = "0" + CLUS if CLUST_NUM < 10
 gen     HOSP = string(HOSPNUM_BDF) + " " + HOSPITAL_NAME_BDF
 replace HOSP = "0" + HOSP if HOSPNUM_BDF < 10
 
+gen     HOSP_ACS = string(HOSPNUM_ACS) + " " + HOSPITAL_NAME_ACS
+replace HOSP_ACS = "0" + HOSP_ACS if HOSPNUM_ACS < 10
+
 *
 * *
-* * * SAVE TO R (Monitoring report)
+* * * SAVE TO R (Monitoring report in html)
 
 export delimited using "Full_database_analysis_ALL_COUNTRIES_P2_LONG_M.csv", replace 
 
@@ -1393,6 +1482,6 @@ export delimited using "Full_database_analysis_ALL_COUNTRIES_P2_LONG_M.csv", rep
 
 export delimited COUNTRY MM Facility PID CLUST_NUM CLUS HOSPNUM_BDF ///
       HOSP BDF_DT_DELIVERY BDF_TM_DELIVERY_HH BDF_TM_DELIVERY_MM NFU_DT_FILL ///
-	  Submit_BDF Transfer_BDF Submit_NFU Transfer_NFU using "P2_del_sub_tra.csv", replace
+	  Submit_BDF Transfer_BDF Submit_NFU Transfer_NFU APP using "P2_del_sub_tra.csv", replace
 
 *end
