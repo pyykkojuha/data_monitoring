@@ -3,7 +3,7 @@
 *****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2025-11-17
+*   Code version:  2025-11-23
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
@@ -32,6 +32,10 @@
 - In terms of facility: NOC -> Peripheral
 - Removing the section where PIDs were dropped if P2B born on August or P2A born on September
 - Drop facilities not included in the P2B
+*/
+
+/* Edits since 2025-11-17
+- GEST_CAT: Clarify 1st based on GA_BIRTH_EUSG, then BDF_BIRTH_WEIGHT. Remove category "Invalid GA".
 */
 
 *
@@ -633,6 +637,7 @@ label variable GA_ACS_DAY "Gestational age in days at dose1 course1, provider"
 gen     GA_ACS_EUSG = ACS_DOSE1_DATE1 - ACS_DT_EARLY_USG1 + EARLYUSG_ACS_DAYS
 label variable GA_ACS_EUSG "Gestational age in days at ACS dose 1 course 1 using the earliest USG"
 
+
 *
 * *
 * * *
@@ -1131,22 +1136,23 @@ drop if PID == ""
 * *
 * * * Gestation category based on corrected EUSG or, if EUSG missing, then birthweight
 
+* Calc GA_BIRTH_EUSG again in case original generation not successful:
+replace GA_BIRTH_EUSG = BDF_DT_DELIVERY - BDF_DT_EARLY_USG + EARLYUSG_BDF_DAYS if GA_BIRTH_EUSG == . & FORM_BDF == 1 & BDF_DT_DELIVERY != . & BDF_DT_EARLY_USG != . & EARLYUSG_BDF_DAYS  != . 
+
 gen     GEST_CAT = .
 replace GEST_CAT = 9 if FORM_BDF == 1
-replace GEST_CAT = 0 if GA_BIRTH_CATU == 0
-replace GEST_CAT = 1 if GA_BIRTH_CATU == 1
-replace GEST_CAT = 2 if GA_BIRTH_CATU == 2
-replace GEST_CAT = 3 if GA_BIRTH_CATU == 3
-replace GEST_CAT = 4 if GA_BIRTH_CATU == 4
-replace GEST_CAT = 0 if GA_BIRTH_EUSG >= 0 & GA_BIRTH_EUSG < 24*7
-replace GEST_CAT = 0 if GEST_CAT > 4 & BDF_BIRTH_WEIGHT <  1000 & BDF_BIRTH_WEIGHT != .
-replace GEST_CAT = 1 if GEST_CAT > 4 & BDF_BIRTH_WEIGHT >= 1000 & BDF_BIRTH_WEIGHT <= 1500
-replace GEST_CAT = 2 if GEST_CAT > 4 & BDF_BIRTH_WEIGHT >  1500 & BDF_BIRTH_WEIGHT <= 2000
-replace GEST_CAT = 3 if GEST_CAT > 4 & BDF_BIRTH_WEIGHT >  2000 & BDF_BIRTH_WEIGHT <  8000
+replace GEST_CAT = 0 if GA_BIRTH_EUSG >= 24*7 & GA_BIRTH_EUSG < 28*7
+replace GEST_CAT = 1 if GA_BIRTH_EUSG >= 28*7 & GA_BIRTH_EUSG < 34*7
+replace GEST_CAT = 2 if GA_BIRTH_EUSG >= 34*7 & GA_BIRTH_EUSG < 37*7
+replace GEST_CAT = 3 if GA_BIRTH_EUSG >= 37*7 & GA_BIRTH_EUSG < 45*7
+replace GEST_CAT = 0 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT <  1000 & BDF_BIRTH_WEIGHT != .
+replace GEST_CAT = 1 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT >= 1000 & BDF_BIRTH_WEIGHT <= 1500
+replace GEST_CAT = 2 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT >  1500 & BDF_BIRTH_WEIGHT <= 2000
+replace GEST_CAT = 3 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT >  2000 & BDF_BIRTH_WEIGHT <  8000
 
-label define   GEST_CAT 0 "EEPT" 1 "EPT" 2 "LPT" 3 "Term" 4 "Invalid USG" 9 "No USG/BW"
+label define   GEST_CAT 0 "EEPT" 1 "EPT" 2 "LPT" 3 "Term" 9 "No USG/BW"
 label values   GEST_CAT GEST_CAT
-label variable GEST_CAT "2 Gestation age category at birth using earliest USG or weight"
+label variable GEST_CAT "Gestation age category at birth using earliest USG or weight"
 
 *
 * *
@@ -1429,7 +1435,7 @@ drop if P2B == "No"
 * * * *
 * * * * * SAVE STATA
 
-gen DATADL = "Data download: 2025-11-17 09:45 EET"
+gen DATADL = "Data download: 2025-11-23 19:50 EET"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
@@ -1451,7 +1457,7 @@ saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13
 * * * * * * * * * * * *
 * * * * * * * * * * * * *
 * * * * * * * * * * * * * *
-* * * * * * * * * * * * * * *  Reability edits for the monitoring report
+* * * * * * * * * * * * * * *  Reability edits for the monitoring report (Juha)
 
 replace COUNTRY = "Bangladesh" if COUNTRY == "BD"
 replace COUNTRY = "Ethiopia"   if COUNTRY == "ET"
