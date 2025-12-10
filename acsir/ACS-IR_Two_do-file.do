@@ -3,7 +3,7 @@
 *****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2025-11-23
+*   Code version:  2025-12-10
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
@@ -38,6 +38,13 @@
 - GEST_CAT: Clarify 1st based on GA_BIRTH_EUSG, then BDF_BIRTH_WEIGHT. Remove category "Invalid GA".
 */
 
+/* Edits since 2025-11-26 [2025-12-10]
+- Labels for new BDF variables from v2.2 registers (BDF_NUM_ANT_VISITS_CAT, BDF_GA_WRITTEN, BDF_LCG, BDF_TOCOLYTICS; option 6 for BDF_LEFT_STATUS)
+- Append BDF_NUM_ANT_VISITS values into the new BDF_NUM_ANT_VISITS_CAT
+- Edit for reshape to allow multiple ACS doses on P2B [FORM_NO] on section "**** Importing ACS form"
+- Duplicate ACS review
+*/
+
 *
 * *
 * * *
@@ -50,7 +57,7 @@ clear
 * * * P2A
 
 *** set the working directory folder: 
-cd "/Monitoring/Data2/P2A/"
+cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2A/"
 
 * The above folder contains following folders representing each country, named:
 ** BD
@@ -211,7 +218,7 @@ cd ..  // take back to the main folder
 * * * P2B
 clear
 *** set the working directory folder: 
-cd "/Monitoring/Data2/P2B/"
+cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2B/"
 
 * The above folder contains following folders representing each country, named:
 ** BD
@@ -283,9 +290,9 @@ preserve
 	format  ACS_DATE ACS_DT_EARLY_USG ACS_DT_LMP ACS_DOSE1_DATE ACS_OUTCOME_DT %td
 **RESHAPE TO WIDE**
 	saveold "ACS.dta", replace version(13)
-	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE // Sort by 1st dose order if two or more courses
+	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM // Sort by 1st dose order if two or more courses
 	quietly by COUNTRY_NUM CLUST_NUM PID: gen FORM_NUM_ACS = cond(_N==1,1,_n)
-	reshape wide ACS* FORM_ACS HOSPNUM_ACS FW_NUM_ACS TAB_CODE_ACS Submit_ACS Transfer_ACS App_Version_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
+	reshape wide ACS* FORM_ACS FORM_NO HOSPNUM_ACS FW_NUM_ACS TAB_CODE_ACS Submit_ACS Transfer_ACS App_Version_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
 	* First ACS as main hospital
 	gen HOSPNUM_ACS = HOSPNUM_ACS1
 	gen APP = "P2B"
@@ -345,7 +352,7 @@ cd ..  // take back to the main folder
 * * * * * * COMBINE COUNTRIES * * * * * * * * * * * * * * * * * * * 
 
 clear
-cd "/Monitoring/Data2/
+cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/
 
 use          "P2A/BD/Full_database_complete_A.dta"
 append using "P2A/PK/Full_database_complete_A.dta", force
@@ -763,6 +770,16 @@ replace AGE_READMISSION_MOTHER = NFU_MOTHER_READMIT_DT - BDF_DT_DELIVERY
 
 *
 * *
+* * * ANC VISITS (v2.2) - convert older entries to new categories:
+
+replace BDF_NUM_ANT_VISITS_CAT = 0 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_VISITS == 0
+replace BDF_NUM_ANT_VISITS_CAT = 1 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_VISITS >= 1 & BDF_NUM_ANT_VISITS <=3
+replace BDF_NUM_ANT_VISITS_CAT = 2 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_VISITS >= 4 & BDF_NUM_ANT_VISITS <=7
+replace BDF_NUM_ANT_VISITS_CAT = 3 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_VISITS >= 8 & BDF_NUM_ANT_VISITS < 88
+replace BDF_NUM_ANT_VISITS_CAT = 8 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_VISITS >= 88 & BDF_NUM_ANT_VISITS <= 99
+
+*
+* *
 * * *
 
 * LABELS:
@@ -787,7 +804,7 @@ label values BDF_BIRTH_STATUS4 BDF_BIRTH_STATUS
 label values BDF_BIRTH_STATUS5 BDF_BIRTH_STATUS
 label values BDF_BIRTH_STATUS6 BDF_BIRTH_STATUS
 
-label define BDF_MODE_DELIVERY 1 "Vaginal" 2 "C-section" 8 "NK" 9 "NA"
+label define BDF_MODE_DELIVERY 1 "Vaginal" 2 "C-section" 3 "Emergency C-section" 4 "Planned C-section" 8 "NK" 9 "NA"
 label values BDF_MODE_DELIVERY1 BDF_MODE_DELIVERY
 label values BDF_MODE_DELIVERY2 BDF_MODE_DELIVERY
 label values BDF_MODE_DELIVERY3 BDF_MODE_DELIVERY
@@ -807,7 +824,7 @@ label values BDF_PT_BIRTH_INDICTN BDF_PT_BIRTH_INDICTN
 label define BDF_FHS 1 "FHS present" 2 "FHS absent" 3 "Not documented" 8 "NK" 9 "NA"
 label values BDF_FHS BDF_FHS
 
-label define BDF_LEFT_STATUS 1 "Alive in Postnatal Ward" 2 "Alive at NICU" 3 "Dead" 4 "Discharged" 5 "Referred" 8 "NK" 9 "NA"
+label define BDF_LEFT_STATUS 1 "Alive in Postnatal Ward" 2 "Alive at NICU" 3 "Dead" 4 "Discharged" 5 "Referred" 6 "Alive in another ward for extra newborn care" 8 "NK" 9 "NA"
 label values BDF_LEFT_STATUS1 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS2 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS3 BDF_LEFT_STATUS
@@ -923,6 +940,16 @@ label values ACS_PRIM_DIAGN1 BDF_PT_BIRTH_INDICTN
 label define ACS_OUTCOME_ADM 1 "No delivery (Discharged/LAMA alive prior to delivery)" 2 "Delivered" 3 "Referred to a higher-level facility" 4 "Maternal death" 5 "Miscarriage/Abortion" 6 "Remained in the facility for another treatment" 8 "NK" 9 "NA"
 label values ACS_OUTCOME_ADM1 ACS_OUTCOME_ADM
 
+* v2.2
+label values BDF_LCG YESNONKNA
+label values BDF_TOCOLYTICS YESNONKNA
+
+label define BDF_GA_WRITTEN 1 "Preterm" 2 "Term" 8 "NK" 9 "NA"
+label values BDF_GA_WRITTEN BDF_GA_WRITTEN
+
+label define BDF_NUM_ANT_VISITS_CAT 0 "0 visits" 1 "1–3 visits" 2 "4–7 visits" 3 "8+ visits" 8 "NK" 9 "NA"
+label values BDF_NUM_ANT_VISITS_CAT BDF_NUM_ANT_VISITS_CAT
+
 *
 * *
 * * * CLEAN ETHIOPIA
@@ -953,7 +980,7 @@ saveold "Full_database_analysis_ALL_COUNTRIES_P2.dta", replace version(13)
 * * * * * * * LONG FORMAT - KEY VARIABLES * * * * * * * * * * * * * * * * * * * * * * *
 
 clear
-use "/Monitoring/Data2/Full_database_analysis_ALL_COUNTRIES_P2.dta"
+use "/Users/juha/X/WHO/WHO24/Monitoring/Data2/Full_database_analysis_ALL_COUNTRIES_P2.dta"
 
 * DROP UNKNOWN NEONATES
 drop if BDF_NUM_FETUS == 8
@@ -1293,7 +1320,7 @@ order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID 
 
 
 * clear 
-* cd "/Monitoring/Data2/"
+* cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/"
 * use "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta"
 
 *
@@ -1429,13 +1456,27 @@ drop if DROP_CLUSTER == 1
 drop if P2B == "No"
 
 *
+* *
+* * * Duplicate ACS review
+
+gen     ACS_FORMS = 0
+replace ACS_FORMS = 1 if FORM_ACS1 == 1
+replace ACS_FORMS = 2 if FORM_ACS1 == 1 & FORM_ACS2 == 1
+
+gen     DUP_ACS = 0
+replace DUP_ACS = 1 if ACS_DOSE1_DATE1 == ACS_DOSE1_DATE2 & ACS_DOSE1_HH1 == ACS_DOSE1_HH2 & ACS_DOSE1_MM1 == ACS_DOSE1_MM2 & FORM_ACS1 == 1 & FORM_ACS2 == 1
+
+br COUNTRY CLUST_NAME PID FW_NUM_ACS1 FW_NUM_ACS2 HOSPNUM_ACS1 HOSPNUM_ACS2 ACS_DOSE1_DATE1 ACS_DOSE1_HH1 ACS_DOSE1_MM1 ACS_DOSE1_DATE2 ACS_DOSE1_HH2 ACS_DOSE1_MM2 ///
+   ACS_DOSE_MG1 ACS_DOSES_TOTAL1 ACS_DOSE_INTERVAL1 ACS_DOSE_MG2 ACS_DOSES_TOTAL2 ACS_DOSE_INTERVAL2 FORM_NO1 FORM_NO2 ACS_FORMS if DUP_ACS == 1
+
+*
 *
 * *
 * * *
 * * * *
 * * * * * SAVE STATA
 
-gen DATADL = "Data download: 2025-11-23 19:50 EET"
+gen DATADL = "Data download: 2025-12-08 10:40 EET"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
