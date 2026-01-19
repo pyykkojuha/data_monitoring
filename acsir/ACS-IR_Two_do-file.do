@@ -3,7 +3,7 @@
 *****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2025-12-10
+*   Code version:  2026-01-19
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
@@ -43,6 +43,17 @@
 - Append BDF_NUM_ANT_VISITS values into the new BDF_NUM_ANT_VISITS_CAT
 - Edit for reshape to allow multiple ACS doses on P2B [FORM_NO] on section "**** Importing ACS form"
 - Duplicate ACS review
+*/
+
+/* Edits since 2025-12-10 [2026-01-19]
+- Use csv instead of xlsx due to inceased download size, causing download erros if xlsx downloaded. Csv-download as zip is fast (P2B)
+- CLUSTER_SEQUENCE_ID merged from facility list to show order of cluster's baseline start
+- Label NFU_VITAL_STATUS, NFU_MOTHER_ALIVE: 7 "Missing"
+- New MNFU variables NFU_MOTHER_STATUS, NFU_MOTHER_DEATH_DATE
+- BDF_SEX: Combine Undetermined and NK to match the latest app
+- Import SSNC form and merge it to long format since each row is a baby [PENDING: multiple forms by baby]
+- Adding variable DGABW_QUERY to indicate PIDs for query on GA/BW outliers
+- Extended catergory to USG_TO_ADM_GROUP
 */
 
 *
@@ -225,7 +236,7 @@ cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2B/"
 ** ET
 ** NG
 ** PK
-* Which each contain only one "Outcome_data_XX_YYYYMMDD.xlsx" downloaded from respective country's ACS-IR SAS dashboard. Another folder needed is:
+* Which each contain csv-files (BDF.csv, NFU.csv, ACS.csv) downloaded from respective country's ACS-IR SAS dashboard, zip exapnded. Another folder needed is:
 ** Facilities - containing the facility listing
 
 * LOOP COUNTRY EXCEL FILES TO CREATE ONE STATA FILE:
@@ -235,13 +246,9 @@ foreach folder in BD ET NG PK {
 clear
 cd "`folder'"
 
-** Find the only one excel file in the country folder:
-local excelfileinfolder : dir . files "Outcome*"
-di `excelfileinfolder'
-
 **** Importing BDF form
 preserve
-	import excel using `excelfileinfolder', firstrow sheet("BDF") clear
+	import delimited BDF.csv, delimiter(comma) case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	keep if BDF_CONSENT == 1
@@ -263,15 +270,38 @@ preserve
 	rename DT_SUBMIT   Submit_BDF
 	rename DT_TRANSFER Transfer_BDF
 	rename App_Version App_Version_BDF
+** CSV dates **	
+    rename BDF_DATE              BDF_DATE_
+    gen    BDF_DATE = dofc(clock(BDF_DATE_, "DMY hms"))
+	drop                         BDF_DATE_
+    rename BDF_DT_ADM              BDF_DT_ADM_
+    gen    BDF_DT_ADM = dofc(clock(BDF_DT_ADM_, "DMY hms"))
+	drop                           BDF_DT_ADM_
+    rename BDF_DT_EARLY_USG              BDF_DT_EARLY_USG_
+    gen    BDF_DT_EARLY_USG = dofc(clock(BDF_DT_EARLY_USG_, "DMY hms"))
+	drop                                 BDF_DT_EARLY_USG_
+    rename BDF_DT_LMP              BDF_DT_LMP_
+    gen    BDF_DT_LMP = dofc(clock(BDF_DT_LMP_, "DMY hms"))
+	drop                           BDF_DT_LMP_
+    rename BDF_DT_DELIVERY              BDF_DT_DELIVERY_
+    gen    BDF_DT_DELIVERY = dofc(clock(BDF_DT_DELIVERY_, "DMY hms"))
+	drop                                BDF_DT_DELIVERY_
+	rename Submit_BDF         Submit_BDF_
+    gen    Submit_BDF = clock(Submit_BDF_, "DMY hms")
+    drop                      Submit_BDF_
+	rename Transfer_BDF         Transfer_BDF_
+    gen    Transfer_BDF = clock(Transfer_BDF_, "DMY hms")
+    drop                        Transfer_BDF_
 	format  Submit_BDF Transfer_BDF %tC
 	format BDF_DATE BDF_DT_ADM BDF_DT_EARLY_USG BDF_DT_LMP BDF_DT_DELIVERY %td
+** SAVE **	
 	order COUNTRY_NUM CLUST_NUM
 	saveold "BDF.dta", replace version(13)
 restore
 
 **** Importing ACS form 
 preserve
-	import excel using `excelfileinfolder', firstrow sheet("ACS") clear
+	import delimited ACS.csv, delimiter(comma) case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	drop USER_CODE STATUS DT_DUE
@@ -285,8 +315,29 @@ preserve
 	rename DT_SUBMIT   Submit_ACS
 	rename DT_TRANSFER Transfer_ACS
 	rename App_Version App_Version_ACS
-	format  Submit_ACS %tC
-	format  Transfer_ACS %tC
+** CSV dates **	
+    rename ACS_DATE              ACS_DATE_
+    gen    ACS_DATE = dofc(clock(ACS_DATE_, "DMY hms"))
+	drop                         ACS_DATE_
+    rename ACS_DT_EARLY_USG              ACS_DT_EARLY_USG_
+    gen    ACS_DT_EARLY_USG = dofc(clock(ACS_DT_EARLY_USG_, "DMY hms"))
+	drop                                 ACS_DT_EARLY_USG_
+    rename ACS_DT_LMP              ACS_DT_LMP_
+    gen    ACS_DT_LMP = dofc(clock(ACS_DT_LMP_, "DMY hms"))
+	drop                           ACS_DT_LMP_
+    rename ACS_DOSE1_DATE              ACS_DOSE1_DATE_
+    gen    ACS_DOSE1_DATE = dofc(clock(ACS_DOSE1_DATE_, "DMY hms"))
+	drop                               ACS_DOSE1_DATE_
+    rename ACS_OUTCOME_DT              ACS_OUTCOME_DT_              
+    gen    ACS_OUTCOME_DT = dofc(clock(ACS_OUTCOME_DT_, "DMY hms"))
+	drop                               ACS_OUTCOME_DT_
+	rename Submit_ACS         Submit_ACS_
+    gen    Submit_ACS = clock(Submit_ACS_, "DMY hms")
+    drop                      Submit_ACS_
+	rename Transfer_ACS         Transfer_ACS_
+    gen    Transfer_ACS = clock(Transfer_ACS_, "DMY hms")
+    drop                        Transfer_ACS_
+	format  Submit_ACS Transfer_ACS %tC
 	format  ACS_DATE ACS_DT_EARLY_USG ACS_DT_LMP ACS_DOSE1_DATE ACS_OUTCOME_DT %td
 **RESHAPE TO WIDE**
 	saveold "ACS.dta", replace version(13)
@@ -301,7 +352,7 @@ restore
 
 *** Importing NFU form 
 preserve
-	import excel using `excelfileinfolder', firstrow sheet("NFU") clear
+	import delimited NFU.csv, delimiter(comma) case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1  
 	drop STATUS
@@ -323,8 +374,42 @@ preserve
 	rename DT_SUBMIT   Submit_NFU
 	rename DT_TRANSFER Transfer_NFU
 	rename App_Version App_Version_NFU
+** CSV dates **	
+    rename NFU_DT_FILL              NFU_DT_FILL_
+    gen    NFU_DT_FILL = dofc(clock(NFU_DT_FILL_, "DMY hms"))
+	drop                            NFU_DT_FILL_
+    rename NFU_MOTHER_READMIT_DT              NFU_MOTHER_READMIT_DT_
+    gen    NFU_MOTHER_READMIT_DT = dofc(clock(NFU_MOTHER_READMIT_DT_, "DMY hms"))
+	drop                                      NFU_MOTHER_READMIT_DT_
+    rename NFU_B1_DEATH_DATE              NFU_B1_DEATH_DATE_
+    gen    NFU_B1_DEATH_DATE = dofc(clock(NFU_B1_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B1_DEATH_DATE_
+    rename NFU_B2_DEATH_DATE              NFU_B2_DEATH_DATE_
+    gen    NFU_B2_DEATH_DATE = dofc(clock(NFU_B2_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B2_DEATH_DATE_
+    rename NFU_B3_DEATH_DATE              NFU_B3_DEATH_DATE_
+    gen    NFU_B3_DEATH_DATE = dofc(clock(NFU_B3_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B3_DEATH_DATE_
+    rename NFU_B4_DEATH_DATE              NFU_B4_DEATH_DATE_
+    gen    NFU_B4_DEATH_DATE = dofc(clock(NFU_B4_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B4_DEATH_DATE_
+    rename NFU_B5_DEATH_DATE              NFU_B5_DEATH_DATE_
+    gen    NFU_B5_DEATH_DATE = dofc(clock(NFU_B5_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B5_DEATH_DATE_
+    rename NFU_B6_DEATH_DATE              NFU_B6_DEATH_DATE_
+    gen    NFU_B6_DEATH_DATE = dofc(clock(NFU_B6_DEATH_DATE_, "DMY hms"))
+	drop                                  NFU_B6_DEATH_DATE_
+    rename NFU_MOTHER_DEATH_DATE              NFU_MOTHER_DEATH_DATE_
+    gen    NFU_MOTHER_DEATH_DATE = dofc(clock(NFU_MOTHER_DEATH_DATE_, "DMY hms"))
+	drop                                      NFU_MOTHER_DEATH_DATE_
+	rename Submit_NFU         Submit_NFU_
+    gen    Submit_NFU = clock(Submit_NFU_, "DMY hms")
+    drop                      Submit_NFU_
+	rename Transfer_NFU         Transfer_NFU_
+    gen    Transfer_NFU = clock(Transfer_NFU_, "DMY hms")
+    drop                        Transfer_NFU_
 	format  Submit_NFU Transfer_NFU %tC
-	format  NFU_DT_FILL NFU_MOTHER_READMIT_DT NFU_B1_DEATH_DATE NFU_B2_DEATH_DATE NFU_B3_DEATH_DATE NFU_B4_DEATH_DATE NFU_B5_DEATH_DATE NFU_B6_DEATH_DATE %td
+	format  NFU_DT_FILL NFU_MOTHER_READMIT_DT NFU_B1_DEATH_DATE NFU_B2_DEATH_DATE NFU_B3_DEATH_DATE NFU_B4_DEATH_DATE NFU_B5_DEATH_DATE NFU_B6_DEATH_DATE NFU_MOTHER_DEATH_DATE %td
 	gen APP = "P2B"
 	order COUNTRY_NUM CLUST_NUM
 	saveold "NFU.dta", replace version(13)
@@ -343,6 +428,105 @@ destring *, ignore("NULL") replace
 saveold "Full_database_complete_B.dta", replace version(13)
 cd ..  // take back to the main folder
 }
+
+
+*
+* *
+* * * P2B SSNC
+clear
+*** set the working directory folder: 
+cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2B/"
+
+* The above folder contains following folders representing each country, named:
+** BD
+** ET
+** NG
+** PK
+* Which each contain csv-files (BDF.csv, NFU.csv, ACS.csv) downloaded from respective country's ACS-IR SAS dashboard, zip exapnded. Another folder needed is:
+** Facilities - containing the facility listing
+
+* LOOP COUNTRY EXCEL FILES TO CREATE ONE STATA FILE:
+foreach folder in BD ET NG PK { 
+
+* DATA IMPORT
+clear
+cd "`folder'"
+
+**** Importing SSNC form
+	import delimited SSNC.csv, delimiter(comma) case(preserve) 
+	destring *, ignore("NULL") replace
+	keep if STATUS == 1
+	drop STATUS
+** CHECK IF DUPLICATE **
+	sort       COUNTRY_NUM CLUST_NUM BABY_ID SSNC_DT_ADM
+	quietly by COUNTRY_NUM CLUST_NUM BABY_ID: gen FORM_NUM_SSNC = cond(_N==1,1,_n)
+	 log using dup_SSNC.log, replace
+	 tab FORM_NUM_SSNC
+	 list PID if FORM_NUM_SSNC > 1
+     log close
+	keep if FORM_NUM_SSNC==1
+	drop DT_DUE
+** FORM DETAILS **
+	gen FORM_SSNC = 1
+	gen APP = "P2B"
+	rename HOSPNUM     HOSPNUM_SSNC
+	rename FW_NUM      FW_NUM_SSNC
+	rename TAB_CODE    TAB_CODE_SSNC
+	rename USER_CODE    USER_CODE_SSNC
+	rename DT_SUBMIT   Submit_SSNC
+	rename DT_TRANSFER Transfer_SSNC
+	rename App_Version App_Version_SSNC
+	rename BABY_ID BABY_ID_SSNC
+** CSV dates **	
+    rename SSNC_DT_ADM              SSNC_DT_ADM_
+    gen    SSNC_DT_ADM = dofc(clock(SSNC_DT_ADM_, "DMY hms"))
+	drop                            SSNC_DT_ADM_
+    rename SSNC_DT_OUTCOME              SSNC_DT_OUTCOME_
+    gen    SSNC_DT_OUTCOME = dofc(clock(SSNC_DT_OUTCOME_, "DMY hms"))
+	drop                                SSNC_DT_OUTCOME_
+	rename Submit_SSNC         Submit_SSNC_
+    gen    Submit_SSNC = clock(Submit_SSNC_, "DMY hms")
+    drop                       Submit_SSNC_
+	rename Transfer_SSNC         Transfer_SSNC_
+    gen    Transfer_SSNC = clock(Transfer_SSNC_, "DMY hms")
+    drop                        Transfer_SSNC_
+	format  Submit_SSNC Transfer_SSNC %tC
+	format SSNC_DT_ADM SSNC_DT_OUTCOME  %td
+** BABY_NUM **
+ gen BABY_NUM = substr(BABY_ID, length(BABY_ID), 1)
+ destring BABY_NUM, replace
+ recast byte BABY_NUM 
+** LABELS **
+label define SSNC_EX_BREASTFEED 1 "Yes" 2 "No"
+label values SSNC_EX_BREASTFEED SSNC_EX_BREASTFEED
+
+label define SSNC_OUTCOME 1 "Discharged" 2 "DAMA/LAMA" 3 "Referred out" 4 "Died" 5 "Remains admitted to SNCU"
+label values SSNC_OUTCOME SSNC_OUTCOME
+	
+** SAVE **	
+	order COUNTRY_NUM CLUST_NUM PID BABY_ID BABY_NUM
+	saveold "SSNC.dta", replace version(13)
+	
+** RESHAPE FOR MULTIPLE VISITS (ALLOW BABY_ID DUPLICATES - NEEDS EDITING - TO BE ADDED...
+*	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM // Sort by 1st dose order if two or more courses
+*	quietly by COUNTRY_NUM CLUST_NUM PID: gen FORM_NUM_ACS = cond(_N==1,1,_n)
+*	reshape wide ACS* FORM_ACS FORM_NO HOSPNUM_ACS FW_NUM_ACS TAB_CODE_ACS Submit_ACS Transfer_ACS App_Version_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
+	* First ACS as main hospital
+*	gen HOSPNUM_SSNC = HOSPNUM_SSNC1
+*	saveold "SSNC_WIDE.dta", replace version(13)
+		
+cd ..
+}
+
+clear
+cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2B/"
+
+use          "BD/SSNC.dta"
+append using "PK/SSNC.dta", force
+append using "ET/SSNC.dta", force
+append using "NG/SSNC.dta", force
+
+saveold "SSNC.dta", replace version(13)
 
 *
 * * 
@@ -382,7 +566,7 @@ tab APP
 *
 
 * Merge facility list (Facility type and name)
-merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_BDF  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_BDF  CLUST_NAME     HOSPITAL_NAME_BDF P2B)
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_BDF  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_BDF  CLUST_NAME     HOSPITAL_NAME_BDF P2B CLUSTER_SEQUENCE_ID)
 merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_ACS  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_ACS  CLUST_NAME_ACS HOSPITAL_NAME_ACS)
 replace CLUST_NAME = CLUST_NAME_ACS if CLUST_NAME == "" & CLUST_NAME_ACS != ""
 
@@ -832,7 +1016,7 @@ label values BDF_LEFT_STATUS4 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS5 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS6 BDF_LEFT_STATUS
 
-label define SEX 1 "Female" 2 "Male" 3 "Undetermined" 8 "NK" 9 "NA"
+label define SEX 1 "Female" 2 "Male" 3 "Undetermined/NK" 8 "NK" 9 "NA"
 label values BDF_SEX1 SEX
 label values BDF_SEX2 SEX
 label values BDF_SEX3 SEX
@@ -846,16 +1030,16 @@ label values BDF_TRIM_1STANC_VISIT TRIMM
 label define NFU_INTERVIEW_DONE 1 "Yes" 2 "Lost to follow-up (60 days)"
 label values NFU_INTERVIEW_DONE NFU_INTERVIEW_DONE
 
-label define NFU_TYPE_INTERVIEW 1 "Telephonic" 2 "Home visit" 3 "Other"	9 "NA"
+label define NFU_TYPE_INTERVIEW 1 "Telephonic" 2 "Home visit" 3 "Other"	7 "Missing" 9 "NA"
 label values NFU_TYPE_INTERVIEW NFU_TYPE_INTERVIEW
 
-label define NFU_INFORMANT 1 "Mother" 2 "Other family member" 3 "Other"	9 "NA"
+label define NFU_INFORMANT 1 "Mother" 2 "Other family member" 3 "Other"	7 "Missing" 9 "NA"
 label values NFU_INFORMANT NFU_INFORMANT
 
 label define NFU_MOTHER_READMIT_RSN 1 "Infection/Fever" 2 "Other" 8 "NK" 9 "NA"
 label values NFU_MOTHER_READMIT_RSN NFU_MOTHER_READMIT_RSN
 
-label define NFU_VITAL_STATUS 1 "Alive" 2 "Dead" 8 "NK" 9 "NA"
+label define NFU_VITAL_STATUS 1 "Alive" 2 "Dead" 7 "Missing" 8 "NK" 9 "NA"
 label values NFU_B1_VITAL_STATUS NFU_VITAL_STATUS
 label values NFU_B2_VITAL_STATUS NFU_VITAL_STATUS
 label values NFU_B3_VITAL_STATUS NFU_VITAL_STATUS
@@ -879,7 +1063,12 @@ label values NFU_B4_DEATH_LOCATION NFU_DEATH_LOCATION
 label values NFU_B5_DEATH_LOCATION NFU_DEATH_LOCATION
 label values NFU_B6_DEATH_LOCATION NFU_DEATH_LOCATION
 
-label values NFU_MOTHER_ALIVE   YESNONKNA
+label define NFU_MOTHER_ALIVE 1 "Yes" 2 "No" 7 "Missing" 8 "NK" 9 "NA"
+label values NFU_MOTHER_ALIVE   NFU_MOTHER_ALIVE
+
+label define NFU_MOTHER_STATUS 1 "Alive" 2 "Dead" 7 "Missing" 8 "NK" 9 "NA"
+label values NFU_MOTHER_STATUS   NFU_MOTHER_STATUS
+
 label values NFU_MOTHER_READMIT YESNONKNA
 label values NFU_B1_SNCU YESNONKNA
 label values NFU_B2_SNCU YESNONKNA
@@ -1199,6 +1388,12 @@ label variable EPT "Preterm, binary using EUSG or BW"
 
 *
 * *
+* * * SEX: NK and Undetermined combined
+
+recode BDF_SEX (8=3)
+
+*
+* *
 * * *
 * * * *
 * * * * * NFU
@@ -1295,13 +1490,33 @@ restore
 
 ***** DROP THOSE TO BE EXCLUDED: (Not until official analysis) ** keep if EXCLUDE == 0 *********
 
+*
+* * 
+* * * GA/BW QUERY
+
+gen     DGABW_QUERY = 0
+replace DGABW_QUERY = 1 if BDF_BIRTH_WEIGHT > -5600 + 40 * GA_BIRTH_EUSG & GA_BIRTH_EUSG != . & BDF_BIRTH_WEIGHT != . & BDF_BIRTH_WEIGHT < 8000
+replace DGABW_QUERY = 2 if BDF_BIRTH_WEIGHT < -4000 + 20 * GA_BIRTH_EUSG & GA_BIRTH_EUSG != . & BDF_BIRTH_WEIGHT != . & BDF_BIRTH_WEIGHT < 8000 & BDF_BIRTH_STATUS != 2
+replace DGABW_QUERY = 3 if GA_BIRTH_EUSG < 24*7 & GA_BIRTH_EUSG != . & (BDF_GA_WEEKS > 23 | BDF_BIRTH_WEIGHT >  1000)
+replace DGABW_QUERY = 0 if GA_BIRTH_EUSG < 24*7 & GA_BIRTH_EUSG != . &  BDF_GA_WEEKS < 24 & BDF_BIRTH_WEIGHT <= 1000
+replace DGABW_QUERY = 4 if GA_BIRTH_EUSG > 45*7 & GA_BIRTH_EUSG != .
+replace DGABW_QUERY = . if FORM_BDF != 1
+
+label define DGABW_QUERY 0 "OK" 1 "High outlier" 2 "Low outlier" 3 "<24 weeks" 4 ">45 weeks"
+label values DGABW_QUERY DGABW_QUERY
+
 
 *
 * * BABY_ID
 
 egen BABY_ID = concat(PID BDF_BIRTH_ORDER) if BDF_BIRTH_ORDER != .
 
-order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU 
+* merge SSNC to long format:
+merge 1:1 PID BABY_NUM using "P2B/SSNC.dta",      gen(match_SNC)
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_SSNC  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC HOSPITAL_NAME_SSNC)
+replace HOSPITAL_NAME_SSNC = "" if FORM_SSNC != 1
+
+order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU FORM_ACS1 FORM_ACS2 FORM_SSNC
 
 *
 * *
@@ -1362,7 +1577,8 @@ replace USG_TO_ADM_GROUP = "1 day before"      if USG_TO_ADM == 1
 replace USG_TO_ADM_GROUP = "2-7 days before"   if USG_TO_ADM >= 2  & USG_TO_ADM <= 7
 replace USG_TO_ADM_GROUP = "8-28 days before"  if USG_TO_ADM >= 8  & USG_TO_ADM <= 28
 replace USG_TO_ADM_GROUP = "29-59 days before" if USG_TO_ADM >= 29 & USG_TO_ADM <= 59
-replace USG_TO_ADM_GROUP = "60+ days before"   if USG_TO_ADM >= 60 & USG_TO_ADM != .
+replace USG_TO_ADM_GROUP = "60-89 days before" if USG_TO_ADM >= 60 & USG_TO_ADM <= 89
+replace USG_TO_ADM_GROUP = "90+ days before"   if USG_TO_ADM >= 90 & USG_TO_ADM != .
 
 *
 * *
@@ -1435,8 +1651,9 @@ replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 2
 replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 4
 replace DROP_CLUSTER = 1 if COUNTRY ==  "ET" & CLUST_NUM  == 7
 
-* Pakistan drop cluster 05 Chakwal & 11 Tharparkar
+* Pakistan drop cluster 05 Chakwal, 09 Dadu, and 11 Tharparkar
 replace DROP_CLUSTER = 1 if COUNTRY ==  "PK" & CLUST_NUM  == 5
+replace DROP_CLUSTER = 1 if COUNTRY ==  "PK" & CLUST_NUM  == 9
 replace DROP_CLUSTER = 1 if COUNTRY ==  "PK" & CLUST_NUM  == 11
 
 * Nigeria drop cluster 04 Jigawa & 11 Plateau
@@ -1476,7 +1693,7 @@ br COUNTRY CLUST_NAME PID FW_NUM_ACS1 FW_NUM_ACS2 HOSPNUM_ACS1 HOSPNUM_ACS2 ACS_
 * * * *
 * * * * * SAVE STATA
 
-gen DATADL = "Data download: 2025-12-08 10:40 EET"
+gen DATADL = "Data download: 2026-01-19 09:50 EET"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
