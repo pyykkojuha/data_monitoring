@@ -3,7 +3,7 @@
 *****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2026-01-19
+*   Code version:  2026-03-03
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
@@ -54,6 +54,16 @@
 - Import SSNC form and merge it to long format since each row is a baby [PENDING: multiple forms by baby]
 - Adding variable DGABW_QUERY to indicate PIDs for query on GA/BW outliers
 - Extended catergory to USG_TO_ADM_GROUP
+*/
+
+/* Edits since 2026-01-19 [2026-03-03]
+- SSNC_HOSPNUM match name to number
+- Merge SSNC and facility name already in the loop
+- Wide format for SSNC
+- Keep facilities on the trial instead of dropping non-facilities (see FACILITY_LIST_P2.dta): keep if P2B == "Yes"
+- Included NFU_DEATH_FAC in reshape long
+- ACS duplicate removal on reading the form
+- No upper limit to GEST_CAT on GA_BIRTH_EUSG, i.e., ≥45 weeks is Term since USG is the main variable. Birthweight used if no USG or delivery GA based on USG <24 weeks
 */
 
 *
@@ -339,6 +349,15 @@ preserve
     drop                        Transfer_ACS_
 	format  Submit_ACS Transfer_ACS %tC
 	format  ACS_DATE ACS_DT_EARLY_USG ACS_DT_LMP ACS_DOSE1_DATE ACS_OUTCOME_DT %td
+**CHECK DUPLICATE ENTRIES (DATE+HH+MM)**
+	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM
+	quietly by COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM: gen FORM_ACS_DUP = cond(_N==1,1,_n)
+	 log using dup_ACS.log, replace
+	 tab FORM_ACS_DUP
+	 list PID if FORM_ACS_DUP > 1
+     log close
+	keep if FORM_ACS_DUP == 1
+	drop FORM_ACS_DUP
 **RESHAPE TO WIDE**
 	saveold "ACS.dta", replace version(13)
 	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM // Sort by 1st dose order if two or more courses
@@ -457,19 +476,10 @@ cd "`folder'"
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	drop STATUS
-** CHECK IF DUPLICATE **
-	sort       COUNTRY_NUM CLUST_NUM BABY_ID SSNC_DT_ADM
-	quietly by COUNTRY_NUM CLUST_NUM BABY_ID: gen FORM_NUM_SSNC = cond(_N==1,1,_n)
-	 log using dup_SSNC.log, replace
-	 tab FORM_NUM_SSNC
-	 list PID if FORM_NUM_SSNC > 1
-     log close
-	keep if FORM_NUM_SSNC==1
-	drop DT_DUE
 ** FORM DETAILS **
 	gen FORM_SSNC = 1
 	gen APP = "P2B"
-	rename HOSPNUM     HOSPNUM_SSNC
+	rename HOSPNUM     HOSPNUM_SSNC_BDF
 	rename FW_NUM      FW_NUM_SSNC
 	rename TAB_CODE    TAB_CODE_SSNC
 	rename USER_CODE    USER_CODE_SSNC
@@ -492,10 +502,44 @@ cd "`folder'"
     drop                        Transfer_SSNC_
 	format  Submit_SSNC Transfer_SSNC %tC
 	format SSNC_DT_ADM SSNC_DT_OUTCOME  %td
+** CHECK IF DUPLICATE (BABY_ID & DATE) **
+	sort       COUNTRY_NUM CLUST_NUM BABY_ID SSNC_DT_ADM
+	quietly by COUNTRY_NUM CLUST_NUM BABY_ID SSNC_DT_ADM: gen FORM_SSNC_DUP = cond(_N==1,1,_n)
+	 log using dup_SSNC.log, replace
+	 tab FORM_SSNC_DUP
+	 list PID if FORM_SSNC_DUP > 1
+     log close
+	keep if FORM_SSNC_DUP == 1
+	drop FORM_SSNC_DUP
+	drop DT_DUE
 ** BABY_NUM **
- gen BABY_NUM = substr(BABY_ID, length(BABY_ID), 1)
+ gen BABY_NUM = substr(BABY_ID_SSNC, length(BABY_ID_SSNC), 1)
  destring BABY_NUM, replace
  recast byte BABY_NUM 
+ 
+** HOSPNUM_SSNC to match name with number ** 
+*rename older entries to match current name (e.g., spaces, quotes, commas)
+rename HOSPNUM_SSNC HOSPITAL_NAME_SSNC
+* BD:
+replace HOSPITAL_NAME_SSNC = "Sylhet Women's Medical College Hospital" if HOSPITAL_NAME_SSNC == "Sylhet Women Medical College Hospital"
+replace HOSPITAL_NAME_SSNC = "Cox's Bazar 250 Bed District Sadar Hospital" if HOSPITAL_NAME_SSNC == "Coxs Bazar 250 Bed District Sadar Hospital"
+* NG:
+replace HOSPITAL_NAME_SSNC = "MMSH, Kano" if HOSPITAL_NAME_SSNC == "MMSH Kano"
+replace HOSPITAL_NAME_SSNC = "UUTH, Uyo" if HOSPITAL_NAME_SSNC == "UUTH Uyo"
+replace HOSPITAL_NAME_SSNC = "OOUTH, Shagamu" if HOSPITAL_NAME_SSNC == "OOUTH Shagamu"
+replace HOSPITAL_NAME_SSNC = "General Hospital, Ijaiye" if HOSPITAL_NAME_SSNC == "General Hospital Ijaiye"
+* PK: 
+replace HOSPITAL_NAME_SSNC = "Jimma Referral Hospital" if HOSPITAL_NAME_SSNC == "Jimma Referral Hospital "
+replace HOSPITAL_NAME_SSNC = "Shenen Gibe Primary Hospital" if HOSPITAL_NAME_SSNC == "Shenen Gibe Primary Hospital "
+replace HOSPITAL_NAME_SSNC = "Debre Birhan Referral Hospital" if HOSPITAL_NAME_SSNC == "Debre Birhan Referral Hospital "
+replace HOSPITAL_NAME_SSNC = "Adigrat General Hospital" if HOSPITAL_NAME_SSNC == "Adigrat General Hospital "
+replace HOSPITAL_NAME_SSNC = "Lumamie Primary Hospital" if HOSPITAL_NAME_SSNC == "Lumamie Primary hospital"
+replace HOSPITAL_NAME_SSNC = "Dessie Referral Hospital" if HOSPITAL_NAME_SSNC == "Dessie Referral Hospital "
+* Keep if data
+replace HOSPITAL_NAME_SSNC = "" if HOSPITAL_NAME_SSNC == ""
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPITAL_NAME_SSNC  using "../../Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC  HOSPNUM_SSNC HOSPITAL_NAME)
+drop if FORM_SSNC != 1
+
 ** LABELS **
 label define SSNC_EX_BREASTFEED 1 "Yes" 2 "No"
 label values SSNC_EX_BREASTFEED SSNC_EX_BREASTFEED
@@ -507,13 +551,17 @@ label values SSNC_OUTCOME SSNC_OUTCOME
 	order COUNTRY_NUM CLUST_NUM PID BABY_ID BABY_NUM
 	saveold "SSNC.dta", replace version(13)
 	
-** RESHAPE FOR MULTIPLE VISITS (ALLOW BABY_ID DUPLICATES - NEEDS EDITING - TO BE ADDED...
-*	sort       COUNTRY_NUM CLUST_NUM PID ACS_DOSE1_DATE ACS_DOSE1_HH ACS_DOSE1_MM // Sort by 1st dose order if two or more courses
-*	quietly by COUNTRY_NUM CLUST_NUM PID: gen FORM_NUM_ACS = cond(_N==1,1,_n)
-*	reshape wide ACS* FORM_ACS FORM_NO HOSPNUM_ACS FW_NUM_ACS TAB_CODE_ACS Submit_ACS Transfer_ACS App_Version_ACS, i(COUNTRY_NUM CLUST_NUM PID) j(FORM_NUM_ACS)
-	* First ACS as main hospital
-*	gen HOSPNUM_SSNC = HOSPNUM_SSNC1
-*	saveold "SSNC_WIDE.dta", replace version(13)
+** RESHAPE FOR MULTIPLE VISITS 
+    order      COUNTRY_NUM CLUST_NUM TAB_CODE_SSNC PID BABY_ID_SSNC HOSPNUM_SSNC_BDF HOSPNUM_SSNC FW_NUM_SSNC SSNC_DT_ADM
+	sort       COUNTRY_NUM CLUST_NUM BABY_ID_SSNC SSNC_DT_ADM // Sort by admission date
+	quietly by COUNTRY_NUM CLUST_NUM BABY_ID_SSNC: gen FORM_NUM_SSNC = cond(_N==1,1,_n)
+	tab FORM_NUM_SSNC
+	reshape wide SSNC* FORM_SSNC HOSPNUM_SSNC_BDF  HOSPNUM_SSNC HOSPITAL_NAME HOSPITAL_NAME_SSNC USER_CODE_SSNC FW_NUM_SSNC TAB_CODE_SSNC Submit_SSNC Transfer_SSNC App_Version_SSNC, i(COUNTRY_NUM CLUST_NUM PID BABY_ID_SSNC) j(FORM_NUM_SSNC)
+	* First SSNC as main hospital
+	gen HOSPNUM_SSNC = HOSPNUM_SSNC1
+	
+* Save wide format
+	saveold "SSNC_WIDE.dta", replace version(13)
 		
 cd ..
 }
@@ -521,12 +569,19 @@ cd ..
 clear
 cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/P2B/"
 
-use          "BD/SSNC.dta"
-append using "PK/SSNC.dta", force
-append using "ET/SSNC.dta", force
-append using "NG/SSNC.dta", force
+use          "BD/SSNC_WIDE.dta"
+append using "PK/SSNC_WIDE.dta", force
+append using "ET/SSNC_WIDE.dta", force
+append using "NG/SSNC_WIDE.dta", force
 
-saveold "SSNC.dta", replace version(13)
+* Number of SSNC admissions by Baby
+egen SSNC_FORMS = rowtotal(FORM_SSNC1 FORM_SSNC2)
+
+* Check all names are merged (edit on ** HOSPNUM_SSNC to match name with number ** if no match)
+br HOSPITAL_NAME_SSNC1 HOSPITAL_NAME1 HOSPNUM_SSNC_BDF1 HOSPNUM_SSNC1 
+drop HOSPITAL_NAME1 HOSPITAL_NAME2 
+
+saveold "SSNC_WIDE.dta", replace version(13)
 
 *
 * * 
@@ -567,8 +622,9 @@ tab APP
 
 * Merge facility list (Facility type and name)
 merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_BDF  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_BDF  CLUST_NAME     HOSPITAL_NAME_BDF P2B CLUSTER_SEQUENCE_ID)
-merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_ACS  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_ACS  CLUST_NAME_ACS HOSPITAL_NAME_ACS)
+merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_ACS  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_ACS  CLUST_NAME_ACS HOSPITAL_NAME_ACS P2B_ACS)
 replace CLUST_NAME = CLUST_NAME_ACS if CLUST_NAME == "" & CLUST_NAME_ACS != ""
+replace P2B = P2B_ACS if P2B == "" & P2B_ACS != ""
 
 *
 * *
@@ -1047,7 +1103,7 @@ label values NFU_B4_VITAL_STATUS NFU_VITAL_STATUS
 label values NFU_B5_VITAL_STATUS NFU_VITAL_STATUS
 label values NFU_B6_VITAL_STATUS NFU_VITAL_STATUS
 
-label define NFU_DEATH_PLACE 1 "Facility" 2 "In transit" 3 "Community/Home" 8 "NK" 9 "NA"
+label define NFU_DEATH_PLACE 1 "Facility" 2 "In transit" 3 "Community/Home" 4 "Other" 8 "NK" 9 "NA"
 label values NFU_B1_DEATH_PLACE NFU_DEATH_PLACE
 label values NFU_B2_DEATH_PLACE NFU_DEATH_PLACE
 label values NFU_B3_DEATH_PLACE NFU_DEATH_PLACE
@@ -1174,21 +1230,6 @@ use "/Users/juha/X/WHO/WHO24/Monitoring/Data2/Full_database_analysis_ALL_COUNTRI
 * DROP UNKNOWN NEONATES
 drop if BDF_NUM_FETUS == 8
 
-* Reveal missing BW
-replace BDF_BIRTH_WEIGHT1 = 9999 if BDF_BIRTH_WEIGHT1 == . & BDF_NUM_FETUS == 1 & BDF_NUM_FETUS <= 6
-replace BDF_BIRTH_WEIGHT2 = 9999 if BDF_BIRTH_WEIGHT2 == . & BDF_NUM_FETUS >= 2 & BDF_NUM_FETUS <= 6
-replace BDF_BIRTH_WEIGHT3 = 9999 if BDF_BIRTH_WEIGHT3 == . & BDF_NUM_FETUS >= 3 & BDF_NUM_FETUS <= 6
-replace BDF_BIRTH_WEIGHT4 = 9999 if BDF_BIRTH_WEIGHT4 == . & BDF_NUM_FETUS >= 4 & BDF_NUM_FETUS <= 6
-replace BDF_BIRTH_WEIGHT5 = 9999 if BDF_BIRTH_WEIGHT5 == . & BDF_NUM_FETUS >= 5 & BDF_NUM_FETUS <= 6
-replace BDF_BIRTH_WEIGHT6 = 9999 if BDF_BIRTH_WEIGHT6 == . & BDF_NUM_FETUS == 6
-
-list COUNTRY PID BDF_BIRTH_WEIGHT1 if BDF_BIRTH_WEIGHT1 == 9999
-list COUNTRY PID BDF_BIRTH_WEIGHT2 if BDF_BIRTH_WEIGHT2 == 9999
-list COUNTRY PID BDF_BIRTH_WEIGHT3 if BDF_BIRTH_WEIGHT3 == 9999
-list COUNTRY PID BDF_BIRTH_WEIGHT4 if BDF_BIRTH_WEIGHT4 == 9999
-list COUNTRY PID BDF_BIRTH_WEIGHT5 if BDF_BIRTH_WEIGHT5 == 9999
-list COUNTRY PID BDF_BIRTH_WEIGHT6 if BDF_BIRTH_WEIGHT6 == 9999
-
 * Rename NFU variables to fit long format:
 rename NFU_B1_VITAL_STATUS NFU_VITAL_STATUS1
 rename NFU_B2_VITAL_STATUS NFU_VITAL_STATUS2
@@ -1294,9 +1335,16 @@ tostring NFU_SNCU_HOSP_ADM3_B3, replace format("%9.0g") force
 tostring NFU_SNCU_HOSP_ADM4_B3, replace format("%9.0g") force
 tostring NFU_SNCU_HOSP_ADM5_B3, replace format("%9.0g") force
 
+tostring NFU_DEATH_FAC1, replace format("%9.0g") force
+tostring NFU_DEATH_FAC2, replace format("%9.0g") force
+tostring NFU_DEATH_FAC3, replace format("%9.0g") force
+tostring NFU_DEATH_FAC4, replace format("%9.0g") force
+tostring NFU_DEATH_FAC5, replace format("%9.0g") force
+tostring NFU_DEATH_FAC6, replace format("%9.0g") force
+
 * Reshape on baby variables. Generates variable BABY_NUM indicating each newborn as one line:
 reshape long BDF_CHILD_ID BDF_BIRTH_ORDER BDF_MODE_DELIVERY BDF_BIRTH_STATUS BDF_BIRTH_WEIGHT BDF_SEX BDF_RESUSCITATION BDF_LEFT_STATUS ///
-			 NFU_VITAL_STATUS NFU_DEATH_PLACE NFU_DEATH_DATE NFU_DEATH_LOCATION ///
+			 NFU_VITAL_STATUS NFU_DEATH_PLACE NFU_DEATH_DATE NFU_DEATH_LOCATION NFU_DEATH_FAC ///
 			 NFU_KMC NFU_KMC_FAC NFU_BREASTFED NFU_BREASTFED_FAC ///
 			 NFU_SNCU NFU_SNCU_NUM ///
 			 NFU_SNCU_ID_ADM1_B NFU_SNCU_HOSP_ADM1_B ///
@@ -1360,7 +1408,7 @@ replace GEST_CAT = 9 if FORM_BDF == 1
 replace GEST_CAT = 0 if GA_BIRTH_EUSG >= 24*7 & GA_BIRTH_EUSG < 28*7
 replace GEST_CAT = 1 if GA_BIRTH_EUSG >= 28*7 & GA_BIRTH_EUSG < 34*7
 replace GEST_CAT = 2 if GA_BIRTH_EUSG >= 34*7 & GA_BIRTH_EUSG < 37*7
-replace GEST_CAT = 3 if GA_BIRTH_EUSG >= 37*7 & GA_BIRTH_EUSG < 45*7
+replace GEST_CAT = 3 if GA_BIRTH_EUSG >= 37*7 & GA_BIRTH_EUSG != .
 replace GEST_CAT = 0 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT <  1000 & BDF_BIRTH_WEIGHT != .
 replace GEST_CAT = 1 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT >= 1000 & BDF_BIRTH_WEIGHT <= 1500
 replace GEST_CAT = 2 if GEST_CAT == 9 & BDF_BIRTH_WEIGHT >  1500 & BDF_BIRTH_WEIGHT <= 2000
@@ -1511,12 +1559,14 @@ label values DGABW_QUERY DGABW_QUERY
 
 egen BABY_ID = concat(PID BDF_BIRTH_ORDER) if BDF_BIRTH_ORDER != .
 
-* merge SSNC to long format:
-merge 1:1 PID BABY_NUM using "P2B/SSNC.dta",      gen(match_SNC)
-merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_SSNC  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC HOSPITAL_NAME_SSNC)
-replace HOSPITAL_NAME_SSNC = "" if FORM_SSNC != 1
+*
+* *
+* * * merge SSNC to long format:
+merge 1:1 PID BABY_NUM using "P2B/SSNC_WIDE.dta",      gen(match_SNC)
+*merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_SSNC  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC HOSPITAL_NAME_SSNC)
+*replace HOSPITAL_NAME_SSNC = "" if FORM_SSNC != 1
 
-order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU FORM_ACS1 FORM_ACS2 FORM_SSNC
+order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU FORM_ACS1 FORM_ACS2 FORM_SSNC1 FORM_SSNC2
 
 *
 * *
@@ -1628,12 +1678,34 @@ label variable weight_level "Weight measured to accuracy"
 
 *
 * *
-* * * Missing BDF
-
-list COUNTRY PID BABY_NUM FORM_NFU NFU_DT_FILL Submit_NFU if HOSPNUM==.
-/* START: Edit */
-* drop if HOSPNUM == .
-/* END: edit */
+* * * Rename SSNC variables (1st admission) to fit the PowerBI dashboard:
+rename FORM_SSNC1              FORM_SSNC 
+rename TAB_CODE_SSNC1          TAB_CODE_SSNC 
+rename HOSPNUM_SSNC_BDF1       HOSPNUM_SSNC_BDF 
+rename FW_NUM_SSNC1            FW_NUM_SSNC 
+rename SSNC_DT_ADM1            SSNC_DT_ADM 
+rename SSNC_ADM_WEIGHT1        SSNC_ADM_WEIGHT 
+rename SSNC_ADM_TEMP1          SSNC_ADM_TEMP 
+rename SSNC_DAY_MOM1           SSNC_DAY_MOM 
+rename SSNC_EX_BREASTFEED1     SSNC_EX_BREASTFEED 
+rename SSNC_FDAYS_HYPOTHERMIA1 SSNC_FDAYS_HYPOTHERMIA 
+rename SSNC_FDAYS_GLUCOSE1     SSNC_FDAYS_GLUCOSE 
+rename SSNC_DAYS_CPAP1         SSNC_DAYS_CPAP 
+rename SSNC_DAYS_OXYGEN1       SSNC_DAYS_OXYGEN 
+rename SSNC_DAYS_GLUCOSE1      SSNC_DAYS_GLUCOSE 
+rename SSNC_DAYS_HYPOGLYCEMIA1 SSNC_DAYS_HYPOGLYCEMIA 
+rename SSNC_DAYS_KMC1          SSNC_DAYS_KMC 
+rename SSNC_DAYS_TEMP1         SSNC_DAYS_TEMP 
+rename SSNC_DAYS_HYPOTHERMIA1  SSNC_DAYS_HYPOTHERMIA 
+rename SSNC_DAYS_ANTIBIO1      SSNC_DAYS_ANTIBIO 
+rename SSNC_OUTCOME1           SSNC_OUTCOME 
+rename SSNC_DT_COMPLETION1     SSNC_DT_COMPLETION 
+rename HOSPITAL_NAME_SSNC1     HOSPITAL_NAME_SSNC 
+rename USER_CODE_SSNC1         USER_CODE_SSNC 
+rename App_Version_SSNC1       App_Version_SSNC 
+rename SSNC_DT_OUTCOME1        SSNC_DT_OUTCOME 
+rename Submit_SSNC1            Submit_SSNC 
+rename Transfer_SSNC1          Transfer_SSNC
 
 *
 * *
@@ -1641,7 +1713,7 @@ list COUNTRY PID BABY_NUM FORM_NFU NFU_DT_FILL Submit_NFU if HOSPNUM==.
 
 gen DROP_CLUSTER = 0
 
-* Bangaldesh drops clusters: 05 Feni, 08 Habiganj, and 11 Chandpur
+* Bangladesh drops clusters 05 Feni, 08 Habiganj, and 11 Chandpur
 replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 5
 replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 8
 replace DROP_CLUSTER = 1 if COUNTRY ==  "BD" & CLUST_NUM  == 11
@@ -1662,29 +1734,21 @@ replace DROP_CLUSTER = 1 if COUNTRY ==  "NG" & CLUST_NUM  == 11
 
 * Extract data
 preserve
- keep if DROP_CLUSTER == 1 | P2B == "No"
- save "Dropped_clusters_P2_LONG_X.dta", replace
+ keep if DROP_CLUSTER == 1 | P2B != "Yes"
+ save "Dropped_data_P2_LONG_X.dta", replace
 restore
 
 * Drop clusters
 drop if DROP_CLUSTER == 1
 
-* Drop facilities
-drop if P2B == "No"
-
+* Keep facilities on the trial
+keep if P2B == "Yes"
+	 
 *
 * *
-* * * Duplicate ACS review
-
-gen     ACS_FORMS = 0
-replace ACS_FORMS = 1 if FORM_ACS1 == 1
-replace ACS_FORMS = 2 if FORM_ACS1 == 1 & FORM_ACS2 == 1
-
-gen     DUP_ACS = 0
-replace DUP_ACS = 1 if ACS_DOSE1_DATE1 == ACS_DOSE1_DATE2 & ACS_DOSE1_HH1 == ACS_DOSE1_HH2 & ACS_DOSE1_MM1 == ACS_DOSE1_MM2 & FORM_ACS1 == 1 & FORM_ACS2 == 1
-
-br COUNTRY CLUST_NAME PID FW_NUM_ACS1 FW_NUM_ACS2 HOSPNUM_ACS1 HOSPNUM_ACS2 ACS_DOSE1_DATE1 ACS_DOSE1_HH1 ACS_DOSE1_MM1 ACS_DOSE1_DATE2 ACS_DOSE1_HH2 ACS_DOSE1_MM2 ///
-   ACS_DOSE_MG1 ACS_DOSES_TOTAL1 ACS_DOSE_INTERVAL1 ACS_DOSE_MG2 ACS_DOSES_TOTAL2 ACS_DOSE_INTERVAL2 FORM_NO1 FORM_NO2 ACS_FORMS if DUP_ACS == 1
+* * * Number of ACS/SSNC forms
+egen    ACS_FORMS = rowtotal(FORM_ACS1 FORM_ACS2 FORM_ACS3)
+replace SSNC_FORMS = 0 if SSNC_FORMS==.
 
 *
 *
@@ -1693,7 +1757,7 @@ br COUNTRY CLUST_NAME PID FW_NUM_ACS1 FW_NUM_ACS2 HOSPNUM_ACS1 HOSPNUM_ACS2 ACS_
 * * * *
 * * * * * SAVE STATA
 
-gen DATADL = "Data download: 2026-01-19 09:50 EET"
+gen DATADL = "Data download: 2026-03-03 14:30 EET"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
