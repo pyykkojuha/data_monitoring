@@ -3,7 +3,7 @@
 *****************************************
 
 *  Stata version:  SE 15.1 (Data saved as Stata 13 version to allow use in Stata 13 - replace 'saveold...version(13)' with 'save' if wanted)
-*   Code version:  2026-03-03
+*   Code version:  2026-05-08
 
 * Note: This code is based on combining all countries. 
 *       To run only only one country, either:
@@ -64,6 +64,15 @@
 - Included NFU_DEATH_FAC in reshape long
 - ACS duplicate removal on reading the form
 - No upper limit to GEST_CAT on GA_BIRTH_EUSG, i.e., ≥45 weeks is Term since USG is the main variable. Birthweight used if no USG or delivery GA based on USG <24 weeks
+*/
+
+/* Edits since 2026-03-03 [2026-05-08]
+- NEEDS_MNFU variable to match MNFU Todo criteria: Consent for MNFU is Yes and has at least one liveborn
+- Correcting BDF_LEFT_STATUS labels
+- Redefining EXCLUDE condition #2 to include no birthweight
+- Mother age at death after delivery MOTHER_AGE_DEATH_DAYS
+- Removed from SSNC import: drop DT_DUE
+- import delimited as delimiter(";") (P2b, Download: CSV Semicolon Format)
 */
 
 *
@@ -258,7 +267,7 @@ cd "`folder'"
 
 **** Importing BDF form
 preserve
-	import delimited BDF.csv, delimiter(comma) case(preserve) 
+	import delimited BDF.csv, delimiter(";") case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	keep if BDF_CONSENT == 1
@@ -311,7 +320,7 @@ restore
 
 **** Importing ACS form 
 preserve
-	import delimited ACS.csv, delimiter(comma) case(preserve) 
+	import delimited ACS.csv, delimiter(";") case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	drop USER_CODE STATUS DT_DUE
@@ -371,7 +380,7 @@ restore
 
 *** Importing NFU form 
 preserve
-	import delimited NFU.csv, delimiter(comma) case(preserve) 
+	import delimited NFU.csv, delimiter(";") case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1  
 	drop STATUS
@@ -472,7 +481,7 @@ clear
 cd "`folder'"
 
 **** Importing SSNC form
-	import delimited SSNC.csv, delimiter(comma) case(preserve) 
+	import delimited SSNC.csv, delimiter(";") case(preserve) 
 	destring *, ignore("NULL") replace
 	keep if STATUS == 1
 	drop STATUS
@@ -511,7 +520,7 @@ cd "`folder'"
      log close
 	keep if FORM_SSNC_DUP == 1
 	drop FORM_SSNC_DUP
-	drop DT_DUE
+	*drop DT_DUE
 ** BABY_NUM **
  gen BABY_NUM = substr(BABY_ID_SSNC, length(BABY_ID_SSNC), 1)
  destring BABY_NUM, replace
@@ -523,18 +532,15 @@ rename HOSPNUM_SSNC HOSPITAL_NAME_SSNC
 * BD:
 replace HOSPITAL_NAME_SSNC = "Sylhet Women's Medical College Hospital" if HOSPITAL_NAME_SSNC == "Sylhet Women Medical College Hospital"
 replace HOSPITAL_NAME_SSNC = "Cox's Bazar 250 Bed District Sadar Hospital" if HOSPITAL_NAME_SSNC == "Coxs Bazar 250 Bed District Sadar Hospital"
-* NG:
-replace HOSPITAL_NAME_SSNC = "MMSH, Kano" if HOSPITAL_NAME_SSNC == "MMSH Kano"
-replace HOSPITAL_NAME_SSNC = "UUTH, Uyo" if HOSPITAL_NAME_SSNC == "UUTH Uyo"
-replace HOSPITAL_NAME_SSNC = "OOUTH, Shagamu" if HOSPITAL_NAME_SSNC == "OOUTH Shagamu"
-replace HOSPITAL_NAME_SSNC = "General Hospital, Ijaiye" if HOSPITAL_NAME_SSNC == "General Hospital Ijaiye"
-* PK: 
+* ET: 
 replace HOSPITAL_NAME_SSNC = "Jimma Referral Hospital" if HOSPITAL_NAME_SSNC == "Jimma Referral Hospital "
 replace HOSPITAL_NAME_SSNC = "Shenen Gibe Primary Hospital" if HOSPITAL_NAME_SSNC == "Shenen Gibe Primary Hospital "
 replace HOSPITAL_NAME_SSNC = "Debre Birhan Referral Hospital" if HOSPITAL_NAME_SSNC == "Debre Birhan Referral Hospital "
 replace HOSPITAL_NAME_SSNC = "Adigrat General Hospital" if HOSPITAL_NAME_SSNC == "Adigrat General Hospital "
 replace HOSPITAL_NAME_SSNC = "Lumamie Primary Hospital" if HOSPITAL_NAME_SSNC == "Lumamie Primary hospital"
 replace HOSPITAL_NAME_SSNC = "Dessie Referral Hospital" if HOSPITAL_NAME_SSNC == "Dessie Referral Hospital "
+replace HOSPITAL_NAME_SSNC = "Hawzen Primary Hospital" if HOSPITAL_NAME_SSNC == "Hawzen Primary Hospital "
+
 * Keep if data
 replace HOSPITAL_NAME_SSNC = "" if HOSPITAL_NAME_SSNC == ""
 merge n:1 COUNTRY_NUM CLUST_NUM HOSPITAL_NAME_SSNC  using "../../Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC  HOSPNUM_SSNC HOSPITAL_NAME)
@@ -995,12 +1001,18 @@ replace NUM_LEFT_ALIVE = NUM_LEFT_ALIVE + 1 if BDF_BIRTH_STATUS6 == 1 & BDF_LEFT
 
 *
 * *
+* * * Maternal death age
+
+gen MOTHER_AGE_DEATH_DAYS = NFU_MOTHER_DEATH_DATE - BDF_DT_DELIVERY if NFU_MOTHER_DEATH_DATE != .
+
+*
+* *
 * * *
 * * * *
-* * * * * NFU (P2A)
+* * * * * MNFU
 
-gen     NEEDS_NFU = 0
-replace NEEDS_NFU = 1 if BDF_MNFU_CONSENT == 1 & NUM_LEFT_ALIVE >= 1
+gen     NEEDS_MNFU = 0
+replace NEEDS_MNFU = 1 if BDF_MNFU_CONSENT == 1 & NUM_LIVEBIRTH >= 1
 
 gen     AGE_NFU = NFU_DT_FILL - BDF_DT_DELIVERY
 label variable AGE_NFU "Age at NFU, days"
@@ -1023,7 +1035,7 @@ replace BDF_NUM_ANT_VISITS_CAT = 8 if BDF_NUM_ANT_VISITS_CAT == . & BDF_NUM_ANT_
 * * *
 
 * LABELS:
-label define YESNONKNA   1 "Yes" 2 "No" 8 "NK" 9 "NA"
+label define YESNONKNA   1 "Yes" 2 "No" 7 "Missing" 8 "NK" 9 "NA"
 
 label values BDF_CONSENT         YESNONKNA
 label values BDF_ACS_RECEIVED    YESNONKNA
@@ -1064,7 +1076,7 @@ label values BDF_PT_BIRTH_INDICTN BDF_PT_BIRTH_INDICTN
 label define BDF_FHS 1 "FHS present" 2 "FHS absent" 3 "Not documented" 8 "NK" 9 "NA"
 label values BDF_FHS BDF_FHS
 
-label define BDF_LEFT_STATUS 1 "Alive in Postnatal Ward" 2 "Alive at NICU" 3 "Dead" 4 "Discharged" 5 "Referred" 6 "Alive in another ward for extra newborn care" 8 "NK" 9 "NA"
+label define BDF_LEFT_STATUS 1 "Alive in Postnatal Ward" 2 "Referred to NICU/SNCU in current facility" 3 "Dead" 4 "Discharged" 5 "Referred to NICU/SNCU in another facility" 6 "Alive in another ward for extra newborn care" 8 "NK" 9 "NA"
 label values BDF_LEFT_STATUS1 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS2 BDF_LEFT_STATUS
 label values BDF_LEFT_STATUS3 BDF_LEFT_STATUS
@@ -1092,7 +1104,7 @@ label values NFU_TYPE_INTERVIEW NFU_TYPE_INTERVIEW
 label define NFU_INFORMANT 1 "Mother" 2 "Other family member" 3 "Other"	7 "Missing" 9 "NA"
 label values NFU_INFORMANT NFU_INFORMANT
 
-label define NFU_MOTHER_READMIT_RSN 1 "Infection/Fever" 2 "Other" 8 "NK" 9 "NA"
+label define NFU_MOTHER_READMIT_RSN 1 "Infection/Fever" 2 "Other" 7 "Missing" 8 "NK" 9 "NA"
 label values NFU_MOTHER_READMIT_RSN NFU_MOTHER_READMIT_RSN
 
 label define NFU_VITAL_STATUS 1 "Alive" 2 "Dead" 7 "Missing" 8 "NK" 9 "NA"
@@ -1165,7 +1177,7 @@ label values NFU_B6_BREASTFED_FAC  YESNONKNA
 
 label define BINARY 0 "No" 1 "Yes"
 label values EUSG_AVAIL BINARY
-label values NEEDS_NFU  BINARY
+label values NEEDS_MNFU  BINARY
 
 * P2B
 label values BDF_ANTIBIOTICS    YESNONKNA
@@ -1192,7 +1204,7 @@ label values BDF_TOCOLYTICS YESNONKNA
 label define BDF_GA_WRITTEN 1 "Preterm" 2 "Term" 8 "NK" 9 "NA"
 label values BDF_GA_WRITTEN BDF_GA_WRITTEN
 
-label define BDF_NUM_ANT_VISITS_CAT 0 "0 visits" 1 "1–3 visits" 2 "4–7 visits" 3 "8+ visits" 8 "NK" 9 "NA"
+label define BDF_NUM_ANT_VISITS_CAT 0 "0 visits" 1 "1-3 visits" 2 "4-7 visits" 3 "8+ visits" 8 "NK" 9 "NA"
 label values BDF_NUM_ANT_VISITS_CAT BDF_NUM_ANT_VISITS_CAT
 
 *
@@ -1440,20 +1452,6 @@ label variable EPT "Preterm, binary using EUSG or BW"
 
 recode BDF_SEX (8=3)
 
-*
-* *
-* * *
-* * * *
-* * * * * NFU
-
-gen     NEEDS_NFU_MOTHER = 0
-replace NEEDS_NFU_MOTHER = 1 if BDF_MNFU_CONSENT == 1
-
-gen     NEEDS_NFU_BABY   = 0
-replace NEEDS_NFU_BABY   = 1 if BDF_MNFU_CONSENT == 1 & BDF_BIRTH_STATUS == 1 & BDF_LEFT_STATUS != 3
-
-label values NEEDS_NFU_BABY   BINARY
-label values NEEDS_NFU_MOTHER BINARY
 
 *
 * *
@@ -1517,17 +1515,17 @@ label variable AGE_DEATH_28_W_SB "Age death 0-28 days"
 * * * EXCLUSION CRITERIA
 
 * 1) Births less than 28 weeks gestation by the earliest ultrasound are excluded. 
-* 2) Births less than 1000 grams are excluded. This weight cut point is only used for babies without information from the earliest ultrasound available. 
+* 2) Births less than 1000 grams or no weight are excluded. This weight cut point is only used for babies without information from the earliest ultrasound available. 
 * 3) Women who delivered at a facility outside the network of care are excluded from the main indicators. 
 
 gen     EXCLUDE = 0
 replace EXCLUDE = 1 if GA_BIRTH_EUSG < 28*7 & GA_BIRTH_EUSG != .
-replace EXCLUDE = 2 if BDF_BIRTH_WEIGHT < 1000 & BDF_BIRTH_WEIGHT != . & GA_BIRTH_EUSG == .
+replace EXCLUDE = 2 if (BDF_BIRTH_WEIGHT < 1000 & BDF_BIRTH_WEIGHT != . & GA_BIRTH_EUSG == .) | (BDF_BIRTH_WEIGHT == 8888 & GA_BIRTH_EUSG == .) | (BDF_BIRTH_WEIGHT == . & GA_BIRTH_EUSG == .)
 replace EXCLUDE = 3 if FORM_BDF != 1
 
 label variable EXCLUDE "Exclusion criteria"
 
-label define EXCLUDE 0 "Valid, keep" 1 "Invalid GA (<28 EUSG), drop" 2 "Invalid weight (<1000) without EUSG, drop" 3 "Invalid place of birth (no BDF), drop"
+label define EXCLUDE 0 "Valid, keep" 1 "GA <28 wks, drop" 2 "No GA and <1000 g, drop" 3 "Invalid place of birth (no BDF), drop"
 label values EXCLUDE EXCLUDE
 
 * FOR ANALYSIS:
@@ -1553,9 +1551,11 @@ replace DGABW_QUERY = . if FORM_BDF != 1
 label define DGABW_QUERY 0 "OK" 1 "High outlier" 2 "Low outlier" 3 "<24 weeks" 4 ">45 weeks"
 label values DGABW_QUERY DGABW_QUERY
 
-
 *
 * * BABY_ID
+
+* Give BDF_BIRTH_ORDER for those on query for missing BDF baby information (2026-03-05)
+replace BDF_BIRTH_ORDER = BABY_NUM if BABY_NUM>1 & BDF_BIRTH_ORDER==. & FORM_BDF==1 & BDF_BIRTH_STATUS!=.
 
 egen BABY_ID = concat(PID BDF_BIRTH_ORDER) if BDF_BIRTH_ORDER != .
 
@@ -1563,30 +1563,8 @@ egen BABY_ID = concat(PID BDF_BIRTH_ORDER) if BDF_BIRTH_ORDER != .
 * *
 * * * merge SSNC to long format:
 merge 1:1 PID BABY_NUM using "P2B/SSNC_WIDE.dta",      gen(match_SNC)
-*merge n:1 COUNTRY_NUM CLUST_NUM HOSPNUM_SSNC  using "Facilities/FACILITY_LIST_P2.dta", nogen keepusing(FAC_SSNC HOSPITAL_NAME_SSNC)
-*replace HOSPITAL_NAME_SSNC = "" if FORM_SSNC != 1
 
 order APP App_Version_BDF App_Version_NFU App_Version_ACS1 App_Version_ACS2 PID BABY_NUM BDF_BIRTH_ORDER BABY_ID COUNTRY_NUM COUNTRY CLUST_NUM CLUST_NAME HOSPNUM_BDF FORM_BDF FORM_NFU FORM_ACS1 FORM_ACS2 FORM_SSNC1 FORM_SSNC2
-
-*
-* *
-* * * Save
-
-* saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta", replace version(13)
-
-
-*
-* *
-* * *
-* * * *
-* * * * * 
-* * * * * *
-* * * * * * * MONITORING VARIABLES
-
-
-* clear 
-* cd "/Users/juha/X/WHO/WHO24/Monitoring/Data2/"
-* use "Full_database_analysis_ALL_COUNTRIES_P2_LONG.dta"
 
 *
 * *
@@ -1700,12 +1678,21 @@ rename SSNC_DAYS_HYPOTHERMIA1  SSNC_DAYS_HYPOTHERMIA
 rename SSNC_DAYS_ANTIBIO1      SSNC_DAYS_ANTIBIO 
 rename SSNC_OUTCOME1           SSNC_OUTCOME 
 rename SSNC_DT_COMPLETION1     SSNC_DT_COMPLETION 
+rename SSNC_DT_OUTCOME1        SSNC_DT_OUTCOME 
 rename HOSPITAL_NAME_SSNC1     HOSPITAL_NAME_SSNC 
 rename USER_CODE_SSNC1         USER_CODE_SSNC 
 rename App_Version_SSNC1       App_Version_SSNC 
-rename SSNC_DT_OUTCOME1        SSNC_DT_OUTCOME 
 rename Submit_SSNC1            Submit_SSNC 
 rename Transfer_SSNC1          Transfer_SSNC
+
+* Add SSNC variables 
+gen SSNC_DURATION = SSNC_DT_OUTCOME - SSNC_DT_ADM + 1
+
+* PERIOD SSNC: creating the month/year date
+gen       YYYY_SSNC =    year(SSNC_DT_ADM) 
+gen         MM_SSNC =   month(SSNC_DT_ADM)
+gen     YYYYMM_SSNC = ym(year(SSNC_DT_ADM), month(SSNC_DT_ADM))
+format  YYYYMM_SSNC %tm
 
 *
 * *
@@ -1751,13 +1738,12 @@ egen    ACS_FORMS = rowtotal(FORM_ACS1 FORM_ACS2 FORM_ACS3)
 replace SSNC_FORMS = 0 if SSNC_FORMS==.
 
 *
-*
 * *
 * * *
 * * * *
 * * * * * SAVE STATA
 
-gen DATADL = "Data download: 2026-03-03 14:30 EET"
+gen DATADL = "Data download: 2026-05-08 11:00 EEST"
 
 saveold "Full_database_analysis_ALL_COUNTRIES_P2_LONG_X.dta", replace version(13)
 
